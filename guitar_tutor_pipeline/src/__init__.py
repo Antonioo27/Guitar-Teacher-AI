@@ -26,7 +26,6 @@ from .config import (
 from .audio_processing import (
     load_audio,
     compute_cqt,
-    normalize_cqt,
     prepare_input_tensor,
 )
 
@@ -46,7 +45,6 @@ from .model import (
 
 from .inference import (
     transcribe_audio,
-    predict_tablature,
     decode_predictions,
 )
 
@@ -70,14 +68,14 @@ __all__ = [
     # Config
     "SAMPLE_RATE", "HOP_LENGTH", "N_BINS", "BINS_PER_OCTAVE", "WEIGHTS_PATH",
     # Audio
-    "load_audio", "compute_cqt", "normalize_cqt", "prepare_input_tensor",
+    "load_audio", "compute_cqt", "prepare_input_tensor",
     # Dataset
     "parse_jams", "parse_midi", "build_note_sequence",
     "midi_to_note_name", "note_name_to_midi", "GuitarSetDataset",
     # Model
     "TabCNN", "load_model",
     # Inference
-    "transcribe_audio", "predict_tablature", "decode_predictions",
+    "transcribe_audio", "decode_predictions",
     # Alignment
     "run_alignment", "compute_dtw_alignment", "classify_errors", "build_error_log",
     # Feedback

@@ -24,11 +24,11 @@ WEIGHTS_DIR = DATA_DIR / "GuitarSet"
 # =============================================================================
 # Modulo 1 — Parametri Audio & CQT
 # =============================================================================
-SAMPLE_RATE = 22050           # Frequenza di campionamento standard (Hz)
+SAMPLE_RATE = 44100           # Frequenza di campionamento standard (Hz)
 HOP_LENGTH = 512              # Hop length per la CQT (campioni)
 N_BINS = 192                  # Numero totale di bin frequenziali nella CQT
 BINS_PER_OCTAVE = 24          # Risoluzione frequenziale (24 = quarti di tono)
-FMIN = 65.41                  # Frequenza minima: C2 (corda più bassa chitarra standard)
+FMIN = 32.70319566257483      # Frequenza minima: C1 (usata nel paper TabCNN)
 AUDIO_DURATION = None         # Durata massima audio in secondi (None = intero file)
 
 # =============================================================================
