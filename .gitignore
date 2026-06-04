@@ -1,0 +1,54 @@
+# ==========================================
+# Ambienti Virtuali e Dipendenze Python
+# ==========================================
+venv/
+.venv/
+env/
+.env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+
+# ==========================================
+# Jupyter Notebook e Google Colab
+# ==========================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ==========================================
+# Segreti, API Keys e LLM (Modulo 4)
+# ==========================================
+.env
+.secrets
+credentials.json
+api_keys.json
+
+# Se usi modelli Hugging Face in locale, ignora la cache
+.cache/
+huggingface/
+
+# ==========================================
+# File di Sistema e IDE
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==========================================
+# Output, Log e Cache dell'Applicazione
+# ==========================================
+logs/
+*.log
+output/
+predictions/
+dtw_results/
