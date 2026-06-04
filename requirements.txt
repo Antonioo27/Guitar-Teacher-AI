@@ -1,0 +1,29 @@
+# ===========================================
+# AI Guitar Tutor — Dipendenze Python
+# ===========================================
+
+# --- Modulo 1: Data Ingestion & Preprocessing ---
+librosa>=0.10.0
+jams>=0.3.4
+pretty-midi>=0.2.10
+numpy>=1.24.0
+pandas>=1.5.0
+soundfile>=0.12.0
+
+# --- Modulo 2: Acoustic Model (TabCNN) ---
+torch>=2.0.0
+scikit-learn>=1.3.0
+mir-eval>=0.7
+
+# --- Modulo 3: Sequence Alignment (DTW) ---
+fastdtw>=0.3.4
+scipy>=1.10.0
+
+# --- Modulo 4: Feedback Generation (LLM) ---
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# --- Web API (Frontend Vue) ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
