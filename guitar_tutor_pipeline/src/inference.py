@@ -7,6 +7,7 @@ Aggiornato per usare l'implementazione TabCNN del collega tramite amt_tools.
 import logging
 import numpy as np
 import torch
+from scipy.ndimage import generic_filter
 
 from . import config
 from .audio_processing import prepare_input_tensor
@@ -14,6 +15,76 @@ from .dataset import midi_to_note_name, tab_to_midi_pitch
 from .model import TabCNN
 
 logger = logging.getLogger(__name__)
+
+
+def _median_filter_predictions(
+    predictions: np.ndarray,
+    kernel_size: int = 9,
+) -> np.ndarray:
+    """
+    Median Filter sui frame di predizione (operato PRIMA del decoder).
+
+    Problema che risolve
+    --------------------
+    TabCNN classifica ogni frame (~11ms) in modo indipendente. In un sustain
+    lungo il segnale CQT è quasi costante, ma piccole variazioni causano
+    dropout di 1-3 frame in cui il modello predice una classe sbagliata
+    (es. "silenzio" o un fret diverso). Il decoder interpreta questi
+    dropout come fine nota + inizio nuova nota → chattering.
+
+    Come funziona
+    -------------
+    Per ogni corda (colonna della matrice T×6) applica una finestra
+    scorrevole di `kernel_size` frame e sostituisce il valore centrale
+    con la **moda** (valore più frequente) della finestra:
+
+        frame:   [G4, G4, sil, G4, G4, G4, sil, G4]   ← raw
+        k=3:     [G4, G4, G4,  G4, G4, G4, G4,  G4]   ← filtrato
+
+    Un kernel da 9 frame copre ~100ms (9 × 11.6ms), sufficiente a
+    eliminare dropout brevi senza smussare i veri cambi di nota
+    (che tipicamente durano > 200ms).
+
+    Args:
+        predictions:  Matrice (T, n_strings) con il fret predetto per frame.
+        kernel_size:  Dimensione della finestra (frame). Deve essere dispari.
+                      Default 9 ≈ 100ms a HOP=512, SR=44100.
+
+    Returns:
+        Matrice (T, n_strings) con le predizioni filtrate.
+    """
+    if kernel_size <= 1:
+        return predictions
+
+    # kernel_size deve essere dispari per avere un centro simmetrico
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+
+    def mode_filter(window: np.ndarray) -> float:
+        """Restituisce la moda (valore più frequente) della finestra."""
+        values, counts = np.unique(window, return_counts=True)
+        return values[counts.argmax()]
+
+    filtered = np.empty_like(predictions)
+    n_strings = predictions.shape[1]
+
+    for s in range(n_strings):
+        filtered[:, s] = generic_filter(
+            predictions[:, s].astype(float),
+            function=mode_filter,
+            size=kernel_size,
+            mode="nearest",   # estende il bordo con il valore più vicino
+        )
+
+    # Conta quanti frame sono stati modificati (utile per logging)
+    changed = int((filtered != predictions).sum())
+    total   = predictions.size
+    logger.info(
+        f"Median filter (k={kernel_size}, ~{kernel_size * config.HOP_LENGTH / config.SAMPLE_RATE * 1000:.0f}ms): "
+        f"{changed}/{total} frame modificati ({100*changed/total:.1f}%)"
+    )
+
+    return filtered
 
 
 def _merge_gap_notes(
@@ -358,7 +429,12 @@ def transcribe_audio(
 
     logger.info(f"Shape predizioni: {predictions.shape}")
 
-    # 5. Decodifica: predizioni frame-wise → sequenza di note
+    # 5. Median Filter: smooting prima del decoder
+    #    Sostituisce ogni frame con la moda della finestra temporale → elimina
+    #    i dropout brevi che il decoder interpreterebbe come fine nota.
+    predictions = _median_filter_predictions(predictions, kernel_size=9)
+
+    # 6. Decodifica: predizioni frame-wise → sequenza di note
     notes = decode_predictions(predictions, confidences)
     logger.info(f"Note trascritte: {len(notes)}")
 
