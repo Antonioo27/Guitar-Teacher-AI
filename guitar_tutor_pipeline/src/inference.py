@@ -221,15 +221,16 @@ def transcribe_audio(
     """
     Pipeline completa di trascrizione con amt_tools:
     1. Estrazione CQT
-    2. Modello pre_proc, forward, post_proc
-    3. Conversione output a lista di note
+    2. Modello pre_proc, forward
+    3. Estrazione confidenze reali dalla distribuzione softmax
+    4. Modello post_proc (argmax → fret predetti)
+    5. Decodifica frame-wise → sequenza di note
     """
     logger.info(f"Trascrizione audio: {audio_path}")
     from amt_tools import tools
 
     # 1. Preprocessing: estrazione CQT grezza
     input_tensor, sr, n_frames_orig = prepare_input_tensor(audio_path, device)
-    
     batch = {tools.KEY_FEATS: input_tensor}
 
     # 2. Inferenza modello amt_tools
@@ -237,37 +238,97 @@ def transcribe_audio(
         batch = model.pre_proc(batch)
         output = model(batch[tools.KEY_FEATS])
         batch[tools.KEY_OUTPUT] = output
+
+        # ── Estrazione confidenze REALI dalla distribuzione softmax ────────
+        #
+        # output[KEY_TABLATURE] contiene la distribuzione softmax prodotta da
+        # SoftmaxGroups PRIMA che post_proc() la converta in argmax.
+        # È l'unica finestra in cui le probabilità su tutte le 21 classi
+        # (20 fret + silenzio) sono ancora disponibili.
+        #
+        # Per ogni (frame t, corda s) la confidenza è:
+        #   conf[t, s] = max_j ( softmax[t, s, j] )  con j ∈ [0..20]
+        #
+        # Se il modello è sicuro:  [0.01, ..., 0.92, ..., 0.01] → conf = 0.92
+        # Se il modello è incerto: [0.06, ..., 0.11, ..., 0.08] → conf = 0.11
+        #
+        # Questa informazione viene poi usata dall'hysteresis in
+        # decode_predictions() per decidere quando aprire/chiudere una nota.
+        raw_softmax = output[tools.KEY_TABLATURE]  # (1, T, n_strings, n_classes)
+
+        try:
+            raw_np = (
+                raw_softmax.cpu().numpy()
+                if isinstance(raw_softmax, torch.Tensor)
+                else np.array(raw_softmax)
+            )
+
+            # Rimuovi la dimensione batch → (T, n_strings, n_classes)
+            raw_np = np.squeeze(raw_np, axis=0) if raw_np.ndim == 4 else raw_np
+
+            if raw_np.ndim == 3:
+                # Shape (T, 6, 21) — prendi il max sull'asse delle classi → (T, 6)
+                conf_np = raw_np.max(axis=-1)
+            elif raw_np.ndim == 2:
+                # Shape appiattita (T, 6*21) — reshape poi max → (T, 6)
+                T = raw_np.shape[0]
+                raw_np = raw_np.reshape(T, 6, -1)
+                conf_np = raw_np.max(axis=-1)
+            else:
+                raise ValueError(f"Shape inattesa per raw_softmax: {raw_np.shape}")
+
+            logger.info(
+                f"Confidenze reali estratte — shape: {conf_np.shape} | "
+                f"media: {conf_np.mean():.3f} | "
+                f"min: {conf_np.min():.3f} | "
+                f"max: {conf_np.max():.3f}"
+            )
+
+        except Exception as e:
+            # Fallback sicuro: se l'estrazione fallisce (API amt_tools cambiata,
+            # shape inattesa, ecc.) usiamo 1.0 e avvisiamo nei log.
+            logger.warning(
+                f"Impossibile estrarre le confidenze reali ({e}). "
+                "Fallback a confidenze=1.0 — l'hysteresis sarà disabilitata."
+            )
+            conf_np = None
+
+        # post_proc converte la distribuzione softmax in argmax (fret predetto)
         risultato_finale = model.post_proc(batch)
 
-    # 3. Estrazione matrice delle predizioni
+    # 3. Estrazione matrice fret per frame: porta a forma (T, 6)
     tablatura_stimata = risultato_finale[tools.KEY_TABLATURE]
-    
+
     if isinstance(tablatura_stimata, torch.Tensor):
         tab_np = tablatura_stimata.cpu().numpy()
     else:
         tab_np = tablatura_stimata
 
-    # La forma attesa da amt_tools post_proc solitamente è (Batch, Frames, Strings, 1)
-    # oppure (Frames, Strings, 1). Cerchiamo di riportarla a (Frames, Strings).
-    
-    # Squeeze rimuove tutte le dimensioni unitarie (es. (1, 1923, 6, 1) -> (1923, 6))
     tab_np = np.squeeze(tab_np)
-    
-    # Se per caso l'audio è così corto da avere 1 frame (1, 6), lo squeeze diventerebbe (6,)
     if tab_np.ndim == 1:
         tab_np = tab_np.reshape(-1, 6)
-    elif tab_np.ndim == 3 and tab_np.shape[1] == 6: 
-        # Es: (N, 6, x)
+    elif tab_np.ndim == 3 and tab_np.shape[1] == 6:
         tab_np = tab_np[:, :, 0]
-        
+
     predictions = tab_np
-    # In assenza delle confidenze raw estratte, usiamo 1.0
-    confidences = np.ones_like(predictions)
 
-    logger.info(f"Shape predizioni estratta: {predictions.shape}")
+    # 4. Scegli la matrice di confidenze da passare al decoder
+    if conf_np is not None and conf_np.shape == predictions.shape:
+        confidences = conf_np
+        logger.info("Hysteresis attiva con confidenze reali del modello.")
+    else:
+        # Shape non coincide (raro) o estrazione fallita: fallback sicuro
+        confidences = np.ones_like(predictions)
+        logger.warning(
+            f"Shape confidenze {getattr(conf_np, 'shape', None)} != "
+            f"predizioni {predictions.shape}. Fallback a 1.0."
+        )
 
-    # 4. Decodifica: predizioni frame-wise → sequenza di note
+    logger.info(f"Shape predizioni: {predictions.shape}")
+
+    # 5. Decodifica: predizioni frame-wise → sequenza di note
     notes = decode_predictions(predictions, confidences)
     logger.info(f"Note trascritte: {len(notes)}")
 
     return notes
+
