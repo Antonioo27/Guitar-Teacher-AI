@@ -263,19 +263,51 @@ def transcribe_audio(
                 else np.array(raw_softmax)
             )
 
-            # Rimuovi la dimensione batch → (T, n_strings, n_classes)
-            raw_np = np.squeeze(raw_np, axis=0) if raw_np.ndim == 4 else raw_np
+            logger.info(f"raw_softmax shape originale: {raw_np.shape}")
+
+            # Rimuovi tutte le dimensioni unitarie e la dimensione batch
+            raw_np = np.squeeze(raw_np)   # (1, T, 126) → (T, 126)
+
+            # SoftmaxGroups appiattisce: n_strings × n_classes = 6 × 21 = 126
+            n_strings = config.NUM_STRINGS   # 6
+            n_classes = config.NUM_CLASSES   # 21  (20 fret + silenzio)
+
+            if raw_np.ndim == 2:
+                T, last_dim = raw_np.shape
+                if last_dim == n_strings * n_classes:
+                    raw_np = raw_np.reshape(T, n_strings, n_classes)
+                elif last_dim != n_strings:
+                    raise ValueError(
+                        f"Shape (T={T}, last_dim={last_dim}) non gestita. "
+                        f"Atteso {n_strings * n_classes} o {n_strings}."
+                    )
+            # raw_np è ora (T, 6, 21) o (T, 6)
 
             if raw_np.ndim == 3:
-                # Shape (T, 6, 21) — prendi il max sull'asse delle classi → (T, 6)
-                conf_np = raw_np.max(axis=-1)
-            elif raw_np.ndim == 2:
-                # Shape appiattita (T, 6*21) — reshape poi max → (T, 6)
-                T = raw_np.shape[0]
-                raw_np = raw_np.reshape(T, 6, -1)
-                conf_np = raw_np.max(axis=-1)
+                # I valori sono log-prob (tutti ≤ 0).
+                # exp() causa underflow numerico per log-prob << 0 (es. -307).
+                #
+                # Soluzione: usiamo il MAX dei log-prob per corda come
+                # indicatore di confidenza — è l'unico valore < 0 ma vicino
+                # a 0, tutto il resto è molto più negativo.
+                #
+                # Per convertirlo in una confidenza in [0, 1] normalizziamo
+                # con un min-max per corda su tutti i frame:
+                #   conf_norm[t, s] = (log_max[t,s] - min_s) / (max_s - min_s)
+                #
+                # Dove max_s ≈ 0 (la classe più probabile) e min_s è il min
+                # globale (classe meno probabile).
+                log_max = raw_np.max(axis=-1)  # (T, 6)  — valori in (-inf, 0]
+
+                # Normalizzazione per corda: porta ogni corda in [0, 1]
+                s_min = log_max.min(axis=0, keepdims=True)   # (1, 6)
+                s_max = log_max.max(axis=0, keepdims=True)   # (1, 6)
+                denom = s_max - s_min
+                denom[denom == 0] = 1.0                       # evita div/0
+                conf_np = (log_max - s_min) / denom           # ∈ [0, 1]
             else:
-                raise ValueError(f"Shape inattesa per raw_softmax: {raw_np.shape}")
+                # (T, 6) — già un proxy di confidenza
+                conf_np = raw_np
 
             logger.info(
                 f"Confidenze reali estratte — shape: {conf_np.shape} | "
