@@ -87,6 +87,62 @@ def _median_filter_predictions(
     return filtered
 
 
+def _filter_implausible_notes(
+    notes: list[dict],
+    min_duration_s: float = 0.08,
+) -> list[dict]:
+    """
+    Filtro di Plausibilità: rimuove note fisicamente impossibili o spurie.
+
+    Criteri applicati
+    -----------------
+    1. **Durata minima**: note < 80ms sono quasi sempre artefatti del modello
+       (il minimo musicalmente significativo a 120 BPM è una semicroma = 125ms).
+       Una soglia a 80ms preserva le semicrome ma elimina i click di 1-7 frame.
+
+    2. **Range MIDI valido**: la chitarra in accordatura standard suona tra
+       E2 (MIDI 40, corda VI open) e l'ultimo fret della corda I.
+       Note fuori da questa finestra sono artefatti (es. C3 in contesti
+       dove la nota più bassa è A2).
+
+    Args:
+        notes:          Lista di note prodotta da decode_predictions().
+        min_duration_s: Durata minima in secondi. Default 80ms.
+
+    Returns:
+        Lista filtrata con solo note plausibili.
+    """
+    # Range MIDI chitarra standard E2=40 … (E4 + 20 fret) = 84
+    min_pitch = config.GUITAR_TUNING[0]                          # E2 = 40
+    max_pitch = config.GUITAR_TUNING[-1] + config.NUM_FRETS      # E4 + 20 = 84
+
+    plausible = []
+    removed   = []
+
+    for n in notes:
+        reason = None
+        if n["duration"] < min_duration_s:
+            reason = f"durata {n['duration']*1000:.0f}ms < {min_duration_s*1000:.0f}ms"
+        elif not (min_pitch <= n["pitch"] <= max_pitch):
+            reason = f"pitch {n['pitch']} fuori range [{min_pitch},{max_pitch}]"
+
+        if reason:
+            removed.append((n["note_name"], round(n["time"], 2), reason))
+        else:
+            plausible.append(n)
+
+    if removed:
+        for name, t, why in removed:
+            logger.debug(f"  Rimossa nota spuria: {name} @{t}s — {why}")
+        logger.info(
+            f"Filtro plausibilità: rimoss{'a' if len(removed)==1 else 'e'} "
+            f"{len(removed)} not{'a' if len(removed)==1 else 'e'} spur{'ia' if len(removed)==1 else 'ie'} "
+            f"({', '.join(r[0] for r in removed)})"
+        )
+
+    return plausible
+
+
 def _merge_gap_notes(
     notes: list[dict],
     max_gap_s: float = 0.10,
@@ -170,17 +226,19 @@ def decode_predictions(
     hop_length: int = config.HOP_LENGTH,
     sr: int = config.SAMPLE_RATE,
     confidence_threshold: float = config.ONSET_THRESHOLD,
-    gap_fill_s: float = 0.10,
+    gap_fill_s: float = 0.50,
 ) -> list[dict]:
     """
     Decodifica le predizioni frame-by-frame della TabCNN in una sequenza
     di note discrete.
 
     Pipeline interna:
-      1. Hysteresis (doppia soglia) — riduce il chattering in real-time
-      2. Filtro di durata minima    — scarta i click spuri < 50ms
+       1. Hysteresis (doppia soglia) — riduce il chattering in real-time
+      2. Filtro di durata minima    — scarta i click spuri < 80ms
       3. Gap Fill                   — unisce i frammenti della stessa nota
                                       separati da un silenzio ≤ gap_fill_s
+      4. Filtro di plausibilità     — rimuove note fuori dal range MIDI
+                                      fisicamente suonabile sulla chitarra
 
     Args:
         predictions:          Matrice (n_frames, num_strings) con il fret
@@ -262,8 +320,8 @@ def decode_predictions(
                     prev_fret[s] = fret
 
     # ── Passo 2: filtro durata minima ─────────────────────────────────────
-    # Scarta le note brevissime (< 50ms) generate da picchi di rumore
-    min_duration = 0.05
+    # 80ms: elimina click brevissimi (1-7 frame) senza toccare le semicrome
+    min_duration = 0.08
     filtered_notes = [n for n in notes if n["duration"] >= min_duration]
     filtered_notes.sort(key=lambda x: (x["time"], x["string"]))
 
@@ -280,6 +338,13 @@ def decode_predictions(
             f"{before} → {len(filtered_notes)} note "
             f"(fuse {before - len(filtered_notes)})"
         )
+
+    # ── Passo 4: Filtro di plausibilità ───────────────────────────────────
+    # Rimuove note fuori dal range fisico della chitarra o troppo brevi
+    # per essere musicamente intenzionali (soglia 80ms).
+    before = len(filtered_notes)
+    filtered_notes = _filter_implausible_notes(filtered_notes, min_duration_s=0.08)
+    logger.debug(f"Filtro plausibilità: {before} → {len(filtered_notes)} note")
 
     return filtered_notes
 
