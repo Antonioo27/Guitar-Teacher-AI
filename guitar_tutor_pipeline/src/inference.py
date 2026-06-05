@@ -25,23 +25,17 @@ def decode_predictions(
 ) -> list[dict]:
     """
     Decodifica le predizioni frame-by-frame della TabCNN in una sequenza
-    di note discrete con onset detection.
-
-    Args:
-        predictions: Array (n_frames, 6) con i tasti predetti (-1 indica corda muta)
-        confidences: Array (n_frames, 6) con le confidenze.
-        hop_length: Hop length usato nella CQT.
-        sr: Sample rate.
-        confidence_threshold: Soglia minima di confidenza.
-
-    Returns:
-        Lista di note predette.
+    di note discrete con onset detection, usando Hysteresis (doppia soglia)
+    e un filtro di durata minima per evitare il chattering delle note.
     """
     n_frames, num_strings = predictions.shape
     frame_duration = hop_length / sr  # Durata di un frame in secondi
 
     notes = []
     prev_fret = [-1] * num_strings  # -1 = corda non attiva
+    
+    # Soglia di rilascio inferiore per evitare oscillazioni rapide (chattering)
+    release_threshold = confidence_threshold * 0.6
 
     for t in range(n_frames):
         time_sec = t * frame_duration
@@ -50,38 +44,64 @@ def decode_predictions(
             fret = int(predictions[t, s])
             conf = float(confidences[t, s])
 
-            # amt_tools restituisce spesso -1 per corde vuote o classi fuori range (es. 20)
+            # Rimuove valori non validi (20 = non suonata, -1 = vuota)
             if fret < 0 or fret >= config.NUM_FRETS:
                 prev_fret[s] = -1
                 continue
 
-            # Filtro per confidenza
-            if conf < confidence_threshold:
-                prev_fret[s] = -1
-                continue
-
-            # Onset detection
-            if fret != prev_fret[s]:
-                midi_pitch = tab_to_midi_pitch(s, fret)
-                notes.append({
-                    "time": round(time_sec, 4),
-                    "duration": round(frame_duration, 4),
-                    "pitch": midi_pitch,
-                    "note_name": midi_to_note_name(midi_pitch),
-                    "string": s,
-                    "fret": fret,
-                    "confidence": round(conf, 4),
-                })
-                prev_fret[s] = fret
+            # Logica di Hysteresis
+            if prev_fret[s] != -1:
+                # La corda era attiva nel frame precedente
+                if conf < release_threshold:
+                    # Rilascio: spegne la nota
+                    prev_fret[s] = -1
+                else:
+                    # La nota continua ad essere attiva
+                    if fret == prev_fret[s]:
+                        # Aggiorna la durata
+                        for note in reversed(notes):
+                            if note["string"] == s and note["fret"] == fret:
+                                note["duration"] = round(time_sec - note["time"] + frame_duration, 4)
+                                break
+                    else:
+                        # Tasto cambiato: iniziamo una nuova nota se ha abbastanza confidenza
+                        if conf >= confidence_threshold:
+                            midi_pitch = tab_to_midi_pitch(s, fret)
+                            notes.append({
+                                "time": round(time_sec, 4),
+                                "duration": round(frame_duration, 4),
+                                "pitch": midi_pitch,
+                                "note_name": midi_to_note_name(midi_pitch),
+                                "string": s,
+                                "fret": fret,
+                                "confidence": round(conf, 4),
+                            })
+                            prev_fret[s] = fret
+                        else:
+                            # Se la confidenza è insufficiente per cambiare tasto, spegni
+                            prev_fret[s] = -1
             else:
-                # Stessa nota del frame precedente: aggiorna la durata
-                for note in reversed(notes):
-                    if note["string"] == s and note["fret"] == fret:
-                        note["duration"] = round(time_sec - note["time"] + frame_duration, 4)
-                        break
+                # La corda non era attiva
+                if conf >= confidence_threshold:
+                    # Onset: iniziamo una nuova nota
+                    midi_pitch = tab_to_midi_pitch(s, fret)
+                    notes.append({
+                        "time": round(time_sec, 4),
+                        "duration": round(frame_duration, 4),
+                        "pitch": midi_pitch,
+                        "note_name": midi_to_note_name(midi_pitch),
+                        "string": s,
+                        "fret": fret,
+                        "confidence": round(conf, 4),
+                    })
+                    prev_fret[s] = fret
 
-    notes.sort(key=lambda x: (x["time"], x["string"]))
-    return notes
+    # Applichiamo un filtro di durata minima (es. 50ms) per rimuovere i brevissimi click spuri
+    min_duration = 0.05
+    filtered_notes = [n for n in notes if n["duration"] >= min_duration]
+    filtered_notes.sort(key=lambda x: (x["time"], x["string"]))
+    
+    return filtered_notes
 
 
 def transcribe_audio(
