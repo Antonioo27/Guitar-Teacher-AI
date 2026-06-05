@@ -1,9 +1,12 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import PianoRollChart from './PianoRollChart.vue'
 
 const props = defineProps({
   results: { type: Object, required: true },
 })
+
+const showChart = ref(false)
 
 const summary = computed(() => props.results?.error_log?.summary || {})
 const errors = computed(() => props.results?.error_log?.errors || [])
@@ -87,6 +90,21 @@ function statusBadgeClass(status) {
         <div class="stat-label">Errori Trovati</div>
       </div>
     </div>
+
+    <!-- Piano Roll Visualization Toggle -->
+    <div class="chart-toggle-row">
+      <button class="btn-toggle-chart" @click="showChart = !showChart">
+        {{ showChart ? '⬆ Nascondi Grafico Piano Roll' : '📊 Visualizza Grafico Piano Roll' }}
+      </button>
+    </div>
+
+    <!-- Piano Roll Component -->
+    <PianoRollChart 
+      v-if="showChart"
+      :predicted-notes="results?.predicted_notes || []"
+      :reference-notes="results?.reference_notes || []"
+      :global-offset="summary.estimated_global_offset_sec || 0"
+    />
 
     <!-- Error Breakdown -->
     <div class="card breakdown-card">
@@ -391,5 +409,29 @@ function statusBadgeClass(status) {
 
 .note-empty {
   color: var(--text-muted);
+}
+
+/* Chart Toggle */
+.chart-toggle-row {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+}
+
+.btn-toggle-chart {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-toggle-chart:hover {
+  background: var(--bg-glass);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
 }
 </style>

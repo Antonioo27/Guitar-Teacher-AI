@@ -193,17 +193,18 @@ def build_note_sequence(
     Converte una lista di annotazioni in una sequenza semplificata
     di note, pronta per l'allineamento DTW.
 
-    Rimuove informazioni non necessarie e mantiene solo time, pitch e nome.
+    Rimuove informazioni non necessarie e mantiene solo time, duration, pitch e nome.
 
     Args:
         annotations: Lista di annotazioni da parse_jams() o parse_midi().
 
     Returns:
-        Lista di {"time": float, "pitch": int, "note_name": str}.
+        Lista di {"time": float, "duration": float, "pitch": int, "note_name": str}.
     """
     return [
         {
             "time": ann["time"],
+            "duration": ann.get("duration", 0.2),
             "pitch": ann["midi_pitch"],
             "note_name": ann["note_name"],
         }
