@@ -52,3 +52,8 @@ logs/
 output/
 predictions/
 dtw_results/
+
+# ==========================================
+# Test e Dati Custom
+# ==========================================
+SetTestHomeMade/Projects/
