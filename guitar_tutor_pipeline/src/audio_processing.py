@@ -24,6 +24,8 @@ def load_audio(
     return y, sr_out
 
 
+from amt_tools.features import CQT
+
 def compute_cqt(
     y: np.ndarray,
     sr: int = config.SAMPLE_RATE,
@@ -33,17 +35,21 @@ def compute_cqt(
     fmin: float = config.FMIN,
 ) -> np.ndarray:
     """
-    Calcola la Constant-Q Transform (CQT) del segnale audio.
+    Calcola la Constant-Q Transform (CQT) del segnale audio usando amt_tools.
+    Invece di implementare manualmente la logica, usiamo l'estrattore ufficiale
+    per garantire una corrispondenza esatta (bit-perfect) con l'addestramento SynthTab.
     """
-    cqt = librosa.cqt(
-        y=y,
-        sr=sr,
+    extractor = CQT(
+        sample_rate=sr,
         hop_length=hop_length,
         n_bins=n_bins,
         bins_per_octave=bins_per_octave,
-        fmin=fmin,
+        fmin=fmin
     )
-    return cqt
+    # process_audio esegue librosa.vqt(gamma=0) + abs + conversione db + normalizzazione / 80 + 1
+    # e restituisce (1, N_BINS, T)
+    feats = extractor.process_audio(y)
+    return feats
 
 
 def prepare_input_tensor(
@@ -51,28 +57,24 @@ def prepare_input_tensor(
     device: str = "cpu",
 ) -> tuple[torch.Tensor, int, int]:
     """
-    Pipeline compatibile con amt_tools:
-    1. Carica l'audio
-    2. Calcola la CQT
-    3. Converte in decibel e normalizza (come in amt_tools VQT)
-    4. Crea il tensore (1, 1, n_bins, n_frames) 
+    Pipeline perfettamente allineata ad amt_tools e SynthTab:
+    1. Carica l'audio al SAMPLE_RATE configurato (22050 Hz per SynthTab).
+    2. Calcola la CQT tramite l'estrattore ufficiale di amt_tools.
+    3. Converte in tensore PyTorch e invia al device.
 
     Il framing locale è delegato alla funzione pre_proc() del modello TabCNN.
     """
-    # 1. Caricamento
+    # 1. Caricamento audio
     y, sr = load_audio(audio_path)
 
-    # 2. CQT
-    cqt = compute_cqt(y, sr)
-    cqt_mag = np.abs(cqt)
+    # 2. CQT (include già normalizzazione dB e unsqueeze del canale)
+    # Ritorna shape: (1, n_bins, n_frames)
+    feats = compute_cqt(y, sr)
 
-    # 3. Normalizzazione come in amt_tools.features.VQT (decibels=True)
-    cqt_db = librosa.amplitude_to_db(cqt_mag, ref=np.max)
-    cqt_norm = (cqt_db / 80.0) + 1.0
+    # 3. Creazione del tensore per amt_tools (Batch=1, Channels=1, Freq=192, Time=N)
+    # unsqueeze(0) aggiunge la dimensione del batch
+    tensor = torch.tensor(feats, dtype=torch.float32).unsqueeze(0).to(device)
 
-    # 4. Creazione del tensore per amt_tools (Batch=1, Channels=1, Freq=192, Time=N)
-    tensor = torch.tensor(cqt_norm, dtype=torch.float32).unsqueeze(0).to(device)
-
-    n_frames = cqt_norm.shape[1]
+    n_frames = feats.shape[-1]
 
     return tensor, sr, n_frames

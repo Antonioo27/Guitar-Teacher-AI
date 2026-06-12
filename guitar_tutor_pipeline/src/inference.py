@@ -17,74 +17,37 @@ from .model import TabCNN
 logger = logging.getLogger(__name__)
 
 
-def _median_filter_predictions(
-    predictions: np.ndarray,
-    kernel_size: int = 9,
-) -> np.ndarray:
+def suppress_harmonics(probs: np.ndarray, threshold: float = 0.5, suppression_factor: float = 0.1) -> np.ndarray:
     """
-    Median Filter sui frame di predizione (operato PRIMA del decoder).
-
-    Problema che risolve
-    --------------------
-    TabCNN classifica ogni frame (~11ms) in modo indipendente. In un sustain
-    lungo il segnale CQT è quasi costante, ma piccole variazioni causano
-    dropout di 1-3 frame in cui il modello predice una classe sbagliata
-    (es. "silenzio" o un fret diverso). Il decoder interpreta questi
-    dropout come fine nota + inizio nuova nota → chattering.
-
-    Come funziona
-    -------------
-    Per ogni corda (colonna della matrice T×6) applica una finestra
-    scorrevole di `kernel_size` frame e sostituisce il valore centrale
-    con la **moda** (valore più frequente) della finestra:
-
-        frame:   [G4, G4, sil, G4, G4, G4, sil, G4]   ← raw
-        k=3:     [G4, G4, G4,  G4, G4, G4, G4,  G4]   ← filtrato
-
-    Un kernel da 9 frame copre ~100ms (9 × 11.6ms), sufficiente a
-    eliminare dropout brevi senza smussare i veri cambi di nota
-    (che tipicamente durano > 200ms).
-
-    Args:
-        predictions:  Matrice (T, n_strings) con il fret predetto per frame.
-        kernel_size:  Dimensione della finestra (frame). Deve essere dispari.
-                      Default 9 ≈ 100ms a HOP=512, SR=44100.
-
-    Returns:
-        Matrice (T, n_strings) con le predizioni filtrate.
+    Sopprime le armoniche spurie (+12 e +19 semitoni) se c'è una fondamentale forte.
+    Operiamo direttamente sul tensore delle probabilità (T, 6, 21).
     """
-    if kernel_size <= 1:
-        return predictions
-
-    # kernel_size deve essere dispari per avere un centro simmetrico
-    if kernel_size % 2 == 0:
-        kernel_size += 1
-
-    def mode_filter(window: np.ndarray) -> float:
-        """Restituisce la moda (valore più frequente) della finestra."""
-        values, counts = np.unique(window, return_counts=True)
-        return values[counts.argmax()]
-
-    filtered = np.empty_like(predictions)
-    n_strings = predictions.shape[1]
-
-    for s in range(n_strings):
-        filtered[:, s] = generic_filter(
-            predictions[:, s].astype(float),
-            function=mode_filter,
-            size=kernel_size,
-            mode="nearest",   # estende il bordo con il valore più vicino
-        )
-
-    # Conta quanti frame sono stati modificati (utile per logging)
-    changed = int((filtered != predictions).sum())
-    total   = predictions.size
-    logger.info(
-        f"Median filter (k={kernel_size}, ~{kernel_size * config.HOP_LENGTH / config.SAMPLE_RATE * 1000:.0f}ms): "
-        f"{changed}/{total} frame modificati ({100*changed/total:.1f}%)"
-    )
-
-    return filtered
+    T, num_strings, num_classes = probs.shape
+    num_frets = 20 # 0..19
+    tuning = [40, 45, 50, 55, 59, 64] # E2, A2, D3, G3, B3, E4
+    
+    # Crea una matrice di mapping (string, fret) -> midi_pitch
+    pitch_map = np.zeros((num_strings, num_frets), dtype=int)
+    for s in range(num_strings):
+        for f in range(num_frets):
+            pitch_map[s, f] = tuning[s] + f
+            
+    for t in range(T):
+        active_pitches = []
+        for s in range(num_strings):
+            for f in range(num_frets):
+                if probs[t, s, f] >= threshold:
+                    active_pitches.append(pitch_map[s, f])
+                    
+        if active_pitches:
+            for s in range(num_strings):
+                for f in range(num_frets):
+                    p = pitch_map[s, f]
+                    for ap in active_pitches:
+                        if p == ap + 12 or p == ap + 19:
+                            probs[t, s, f] *= suppression_factor
+                            break
+    return probs
 
 
 def _filter_implausible_notes(
@@ -221,129 +184,79 @@ def _merge_gap_notes(
 
 
 def decode_predictions(
-    predictions: np.ndarray,
-    confidences: np.ndarray,
+    probs: np.ndarray,
     hop_length: int = config.HOP_LENGTH,
     sr: int = config.SAMPLE_RATE,
-    confidence_threshold: float = config.ONSET_THRESHOLD,
-    gap_fill_s: float = 0.50,
+    t_on: float = 0.50,
+    t_off: float = 0.25,
+    gap_fill_s: float = 0.0,
 ) -> list[dict]:
     """
-    Decodifica le predizioni frame-by-frame della TabCNN in una sequenza
-    di note discrete.
-
-    Pipeline interna:
-       1. Hysteresis (doppia soglia) — riduce il chattering in real-time
-      2. Filtro di durata minima    — scarta i click spuri < 80ms
-      3. Gap Fill                   — unisce i frammenti della stessa nota
-                                      separati da un silenzio ≤ gap_fill_s
-      4. Filtro di plausibilità     — rimuove note fuori dal range MIDI
-                                      fisicamente suonabile sulla chitarra
-
-    Args:
-        predictions:          Matrice (n_frames, num_strings) con il fret
-                              predetto per ogni frame e ogni corda.
-        confidences:          Matrice (n_frames, num_strings) con la
-                              confidenza associata ad ogni predizione.
-        hop_length:           Hop length CQT in campioni.
-        sr:                   Sample rate in Hz.
-        confidence_threshold: Soglia di onset (attivazione nota).
-        gap_fill_s:           Gap massimo (secondi) per la fusione note.
-                              Imposta a 0.0 per disabilitare il gap fill.
+    Decodifica la matrice delle probabilità usando Hysteresis a doppia soglia (Schmitt Trigger).
     """
-    n_frames, num_strings = predictions.shape
-    frame_duration = hop_length / sr  # Durata di un frame in secondi
-
+    n_frames, num_strings, _ = probs.shape
+    frame_duration = hop_length / sr
     notes = []
-    prev_fret = [-1] * num_strings  # -1 = corda non attiva
     
-    # Soglia di rilascio inferiore per evitare oscillazioni rapide (chattering)
-    release_threshold = confidence_threshold * 0.6
-
+    # -1 significa corda inattiva (silenzio)
+    active_fret = [-1] * num_strings
+    
     for t in range(n_frames):
         time_sec = t * frame_duration
-
+        
         for s in range(num_strings):
-            fret = int(predictions[t, s])
-            conf = float(confidences[t, s])
-
-            # Rimuove valori non validi (20 = non suonata, -1 = vuota)
-            if fret < 0 or fret >= config.NUM_FRETS:
-                prev_fret[s] = -1
-                continue
-
-            # Logica di Hysteresis
-            if prev_fret[s] != -1:
-                # La corda era attiva nel frame precedente
-                if conf < release_threshold:
-                    # Rilascio: spegne la nota
-                    prev_fret[s] = -1
-                else:
-                    # La nota continua ad essere attiva
-                    if fret == prev_fret[s]:
-                        # Aggiorna la durata
-                        for note in reversed(notes):
-                            if note["string"] == s and note["fret"] == fret:
-                                note["duration"] = round(time_sec - note["time"] + frame_duration, 4)
-                                break
-                    else:
-                        # Tasto cambiato: iniziamo una nuova nota se ha abbastanza confidenza
-                        if conf >= confidence_threshold:
-                            midi_pitch = tab_to_midi_pitch(s, fret)
-                            notes.append({
-                                "time": round(time_sec, 4),
-                                "duration": round(frame_duration, 4),
-                                "pitch": midi_pitch,
-                                "note_name": midi_to_note_name(midi_pitch),
-                                "string": s,
-                                "fret": fret,
-                                "confidence": round(conf, 4),
-                            })
-                            prev_fret[s] = fret
-                        else:
-                            # Se la confidenza è insufficiente per cambiare tasto, spegni
-                            prev_fret[s] = -1
-            else:
-                # La corda non era attiva
-                if conf >= confidence_threshold:
-                    # Onset: iniziamo una nuova nota
-                    midi_pitch = tab_to_midi_pitch(s, fret)
+            current_fret = active_fret[s]
+            
+            if current_fret == -1:
+                best_fret = int(np.argmax(probs[t, s, :20]))
+                if probs[t, s, best_fret] >= t_on:
+                    active_fret[s] = best_fret
+                    midi_pitch = tab_to_midi_pitch(s, best_fret)
                     notes.append({
                         "time": round(time_sec, 4),
                         "duration": round(frame_duration, 4),
                         "pitch": midi_pitch,
                         "note_name": midi_to_note_name(midi_pitch),
                         "string": s,
-                        "fret": fret,
-                        "confidence": round(conf, 4),
+                        "fret": best_fret,
+                        "confidence": round(float(probs[t, s, best_fret]), 4),
                     })
-                    prev_fret[s] = fret
+            else:
+                if probs[t, s, current_fret] < t_off:
+                    best_other_fret = int(np.argmax(probs[t, s, :20]))
+                    if probs[t, s, best_other_fret] >= t_on:
+                        active_fret[s] = best_other_fret
+                        midi_pitch = tab_to_midi_pitch(s, best_other_fret)
+                        notes.append({
+                            "time": round(time_sec, 4),
+                            "duration": round(frame_duration, 4),
+                            "pitch": midi_pitch,
+                            "note_name": midi_to_note_name(midi_pitch),
+                            "string": s,
+                            "fret": best_other_fret,
+                            "confidence": round(float(probs[t, s, best_other_fret]), 4),
+                        })
+                    else:
+                        active_fret[s] = -1 
+                else:
+                    for note in reversed(notes):
+                        if note["string"] == s and note["fret"] == current_fret:
+                            note["duration"] = round(time_sec - note["time"] + frame_duration, 4)
+                            note["confidence"] = round(max(note["confidence"], float(probs[t, s, current_fret])), 4)
+                            break
 
     # ── Passo 2: filtro durata minima ─────────────────────────────────────
-    # 80ms: elimina click brevissimi (1-7 frame) senza toccare le semicrome
-    min_duration = 0.08
+    min_duration = 0.05
     filtered_notes = [n for n in notes if n["duration"] >= min_duration]
     filtered_notes.sort(key=lambda x: (x["time"], x["string"]))
 
-    logger.debug(f"Note dopo filtro durata: {len(filtered_notes)} (erano {len(notes)})")
-
     # ── Passo 3: Gap Fill ─────────────────────────────────────────────────
-    # Unisce i frammenti della stessa nota separati da un silenzio breve.
-    # Disabilitabile impostando gap_fill_s=0.0.
     if gap_fill_s > 0.0:
-        before = len(filtered_notes)
         filtered_notes = _merge_gap_notes(filtered_notes, max_gap_s=gap_fill_s)
-        logger.debug(
-            f"Gap fill ({gap_fill_s*1000:.0f}ms): "
-            f"{before} → {len(filtered_notes)} note "
-            f"(fuse {before - len(filtered_notes)})"
-        )
 
     # ── Passo 4: Filtro di plausibilità ───────────────────────────────────
-    # Rimuove note fuori dal range fisico della chitarra o troppo brevi
-    # per essere musicamente intenzionali (soglia 80ms).
     before = len(filtered_notes)
-    filtered_notes = _filter_implausible_notes(filtered_notes, min_duration_s=0.08)
+    filtered_notes = _filter_implausible_notes(filtered_notes, min_duration_s=0.05)
     logger.debug(f"Filtro plausibilità: {before} → {len(filtered_notes)} note")
 
     return filtered_notes
@@ -373,6 +286,12 @@ def transcribe_audio(
     with torch.no_grad():
         batch = model.pre_proc(batch)
         output = model(batch[tools.KEY_FEATS])
+        logger.info(f"[DEBUG] raw_softmax type: {type(output[tools.KEY_TABLATURE])}")
+        if hasattr(output[tools.KEY_TABLATURE], 'shape'):
+            logger.info(f"[DEBUG] raw_softmax shape: {output[tools.KEY_TABLATURE].shape}")
+        elif isinstance(output[tools.KEY_TABLATURE], list):
+            logger.info(f"[DEBUG] raw_softmax list len: {len(output[tools.KEY_TABLATURE])}")
+        
         batch[tools.KEY_OUTPUT] = output
 
         # ── Estrazione confidenze REALI dalla distribuzione softmax ────────
@@ -391,6 +310,7 @@ def transcribe_audio(
         # Questa informazione viene poi usata dall'hysteresis in
         # decode_predictions() per decidere quando aprire/chiudere una nota.
         raw_softmax = output[tools.KEY_TABLATURE]  # (1, T, n_strings, n_classes)
+        final_probs = None
 
         try:
             raw_np = (
@@ -399,51 +319,36 @@ def transcribe_audio(
                 else np.array(raw_softmax)
             )
 
-            logger.info(f"raw_softmax shape originale: {raw_np.shape}")
+            # Squeeze eventuale dimensione batch se = 1. E.g. (1, T, 126) -> (T, 126)
+            if raw_np.ndim == 3 and raw_np.shape[0] == 1:
+                raw_np = np.squeeze(raw_np, axis=0)
+            
+            # Se è (T, 1, 126), rimuovi la dimensione 1
+            if raw_np.ndim == 3 and raw_np.shape[1] == 1 and raw_np.shape[2] == 126:
+                raw_np = np.squeeze(raw_np, axis=1)
 
-            # Rimuovi tutte le dimensioni unitarie e la dimensione batch
-            raw_np = np.squeeze(raw_np)   # (1, T, 126) → (T, 126)
-
-            # SoftmaxGroups appiattisce: n_strings × n_classes = 6 × 21 = 126
-            n_strings = config.NUM_STRINGS   # 6
-            n_classes = config.NUM_CLASSES   # 21  (20 fret + silenzio)
-
-            if raw_np.ndim == 2:
-                T, last_dim = raw_np.shape
-                if last_dim == n_strings * n_classes:
-                    raw_np = raw_np.reshape(T, n_strings, n_classes)
-                elif last_dim != n_strings:
-                    raise ValueError(
-                        f"Shape (T={T}, last_dim={last_dim}) non gestita. "
-                        f"Atteso {n_strings * n_classes} o {n_strings}."
-                    )
-            # raw_np è ora (T, 6, 21) o (T, 6)
-
-            if raw_np.ndim == 3:
-                # I valori sono log-prob (tutti ≤ 0).
-                # exp() causa underflow numerico per log-prob << 0 (es. -307).
-                #
-                # Soluzione: usiamo il MAX dei log-prob per corda come
-                # indicatore di confidenza — è l'unico valore < 0 ma vicino
-                # a 0, tutto il resto è molto più negativo.
-                #
-                # Per convertirlo in una confidenza in [0, 1] normalizziamo
-                # con un min-max per corda su tutti i frame:
-                #   conf_norm[t, s] = (log_max[t,s] - min_s) / (max_s - min_s)
-                #
-                # Dove max_s ≈ 0 (la classe più probabile) e min_s è il min
-                # globale (classe meno probabile).
-                log_max = raw_np.max(axis=-1)  # (T, 6)  — valori in (-inf, 0]
-
-                # Normalizzazione per corda: porta ogni corda in [0, 1]
-                s_min = log_max.min(axis=0, keepdims=True)   # (1, 6)
-                s_max = log_max.max(axis=0, keepdims=True)   # (1, 6)
-                denom = s_max - s_min
-                denom[denom == 0] = 1.0                       # evita div/0
-                conf_np = (log_max - s_min) / denom           # ∈ [0, 1]
+            if raw_np.ndim == 2 and raw_np.shape[1] == 126:
+                T = raw_np.shape[0]
+                raw_np = raw_np.reshape(T, 6, 21)
+                
+            import scipy.ndimage
+            
+            if raw_np.ndim == 3 and raw_np.shape[1] == 6 and raw_np.shape[2] == 21:
+                exp_logits = np.exp(raw_np - np.max(raw_np, axis=-1, keepdims=True))
+                probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)
+                probs = scipy.ndimage.gaussian_filter1d(probs, sigma=3.0, axis=0)
+                probs = suppress_harmonics(probs, threshold=0.5, suppression_factor=0.1)
+                final_probs = probs
+                
+                smoothed_logits = np.log(probs + 1e-9)
+                batch[tools.KEY_OUTPUT][tools.KEY_TABLATURE] = torch.tensor(
+                    smoothed_logits.reshape(raw_softmax.shape),
+                    device=raw_softmax.device,
+                    dtype=raw_softmax.dtype
+                )
+                conf_np = probs.max(axis=-1)
             else:
-                # (T, 6) — già un proxy di confidenza
-                conf_np = raw_np
+                raise ValueError(f"Shape inattesa per raw_softmax: {raw_np.shape}")
 
             logger.info(
                 f"Confidenze reali estratte — shape: {conf_np.shape} | "
@@ -478,6 +383,10 @@ def transcribe_audio(
     elif tab_np.ndim == 3 and tab_np.shape[1] == 6:
         tab_np = tab_np[:, :, 0]
 
+    # tab_np shape could be (6, T) or (T, 6)
+    if tab_np.shape[0] == 6 and tab_np.ndim == 2:
+        tab_np = tab_np.T
+
     predictions = tab_np
 
     # 4. Scegli la matrice di confidenze da passare al decoder
@@ -494,13 +403,10 @@ def transcribe_audio(
 
     logger.info(f"Shape predizioni: {predictions.shape}")
 
-    # 5. Median Filter: smooting prima del decoder
-    #    Sostituisce ogni frame con la moda della finestra temporale → elimina
-    #    i dropout brevi che il decoder interpreterebbe come fine nota.
-    predictions = _median_filter_predictions(predictions, kernel_size=9)
-
-    # 6. Decodifica: predizioni frame-wise → sequenza di note
-    notes = decode_predictions(predictions, confidences)
+    if final_probs is not None:
+        notes = decode_predictions(final_probs)
+    else:
+        notes = []
     logger.info(f"Note trascritte: {len(notes)}")
 
     return notes

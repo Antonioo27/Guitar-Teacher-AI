@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # Guitar-Teacher-A
 PIPELINE_ROOT = PROJECT_ROOT / "guitar_tutor_pipeline"
 DATA_DIR = PIPELINE_ROOT / "data"
 GUITARSET_DIR = DATA_DIR / "GuitarSet"
-WEIGHTS_DIR = DATA_DIR / "GuitarSet"
+WEIGHTS_DIR = DATA_DIR
 
 # =============================================================================
 # Modulo 1 — Parametri Audio & CQT
@@ -28,7 +28,7 @@ SAMPLE_RATE = 44100           # Frequenza di campionamento standard (Hz)
 HOP_LENGTH = 512              # Hop length per la CQT (campioni)
 N_BINS = 192                  # Numero totale di bin frequenziali nella CQT
 BINS_PER_OCTAVE = 24          # Risoluzione frequenziale (24 = quarti di tono)
-FMIN = 32.70319566257483      # Frequenza minima: C1 (usata nel paper TabCNN)
+FMIN = 32.70319566257483      # Frequenza minima per la CQT (C1)
 AUDIO_DURATION = None         # Durata massima audio in secondi (None = intero file)
 
 # =============================================================================
@@ -39,8 +39,8 @@ NUM_FRETS = 20                # Fret 0..19 (0 = corda a vuoto)
 NUM_CLASSES = NUM_FRETS + 1   # 21 classi per corda (0-19 + "non suonata")
 # Il modello predice per ogni frame e per ogni corda quale tasto è premuto
 
-ONSET_THRESHOLD = 0.5         # Soglia di confidenza per la detection delle note
-WEIGHTS_FILENAME = "GuitarSet.pt"  # Nome del file dei pesi
+ONSET_THRESHOLD = 0.5
+WEIGHTS_FILENAME = "our weights/GuitarSet_best_validation.pt"  # Nome del file dei pesi
 WEIGHTS_PATH = WEIGHTS_DIR / WEIGHTS_FILENAME
 
 # Dimensioni di input attese dal modello TabCNN
