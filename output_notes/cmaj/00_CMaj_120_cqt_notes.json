@@ -1,7 +1,7 @@
 [
   {
     "time": 0.0,
-    "duration": 0.4063,
+    "duration": 0.8127,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -9,8 +9,8 @@
     "confidence": 0.8485
   },
   {
-    "time": 0.4412,
-    "duration": 0.8475,
+    "time": 0.8824,
+    "duration": 1.695,
     "pitch": 67,
     "note_name": "G4",
     "string": 5,
@@ -18,8 +18,8 @@
     "confidence": 0.9632
   },
   {
-    "time": 1.3119,
-    "duration": 0.4644,
+    "time": 2.6239,
+    "duration": 0.9288,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -27,8 +27,8 @@
     "confidence": 0.9776
   },
   {
-    "time": 1.8112,
-    "duration": 0.9752,
+    "time": 3.6223,
+    "duration": 1.9505,
     "pitch": 67,
     "note_name": "G4",
     "string": 4,
@@ -36,8 +36,8 @@
     "confidence": 0.7696
   },
   {
-    "time": 2.8096,
-    "duration": 0.4412,
+    "time": 5.6192,
+    "duration": 0.8824,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -45,17 +45,17 @@
     "confidence": 0.9732
   },
   {
-    "time": 3.2508,
-    "duration": 0.6269,
+    "time": 6.5016,
+    "duration": 1.2539,
     "pitch": 58,
     "note_name": "A#3",
     "string": 3,
     "fret": 3,
-    "confidence": 0.9548
+    "confidence": 0.7667
   },
   {
-    "time": 3.9358,
-    "duration": 0.4063,
+    "time": 7.8716,
+    "duration": 0.8127,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -63,8 +63,8 @@
     "confidence": 0.8403
   },
   {
-    "time": 4.377,
-    "duration": 0.8475,
+    "time": 8.7539,
+    "duration": 1.6951,
     "pitch": 67,
     "note_name": "G4",
     "string": 5,
@@ -72,8 +72,8 @@
     "confidence": 0.881
   },
   {
-    "time": 5.2477,
-    "duration": 0.4644,
+    "time": 10.4954,
+    "duration": 0.9288,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -81,8 +81,8 @@
     "confidence": 0.9717
   },
   {
-    "time": 5.7469,
-    "duration": 0.9753,
+    "time": 11.4939,
+    "duration": 1.9505,
     "pitch": 67,
     "note_name": "G4",
     "string": 5,
@@ -90,8 +90,8 @@
     "confidence": 0.8022
   },
   {
-    "time": 6.7454,
-    "duration": 0.4412,
+    "time": 13.4908,
+    "duration": 0.8824,
     "pitch": 60,
     "note_name": "C4",
     "string": 3,
@@ -99,12 +99,12 @@
     "confidence": 0.8774
   },
   {
-    "time": 7.1866,
-    "duration": 0.6153,
+    "time": 14.3732,
+    "duration": 1.2306,
     "pitch": 58,
     "note_name": "A#3",
-    "string": 3,
-    "fret": 3,
-    "confidence": 0.8863
+    "string": 2,
+    "fret": 8,
+    "confidence": 0.7591
   }
 ]

@@ -17,12 +17,32 @@ from typing import Any
 
 import numpy as np
 from fastdtw import fastdtw
-from scipy.spatial.distance import euclidean
 from scipy.optimize import linear_sum_assignment
 
 from . import config
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Normalizzazione delle chiavi
+# =============================================================================
+
+def _normalize_pitch(seq: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Garantisce che ogni nota abbia la chiave "pitch".
+
+    Le note predette da runTabCNN/inference usano "pitch", mentre quelle
+    lette da un MIDI con parse_midi usano "midi_pitch". Questo helper rende
+    l'allineamento indipendente dalla sorgente, senza modificare gli originali
+    (restituisce copie superficiali quando serve aggiungere la chiave).
+    """
+    out = []
+    for n in seq:
+        if "pitch" not in n and "midi_pitch" in n:
+            n = {**n, "pitch": n["midi_pitch"]}
+        out.append(n)
+    return out
 
 
 # =============================================================================
@@ -66,9 +86,20 @@ def pitch_time_distance(
 # Allineamento DTW
 # =============================================================================
 
+def pitch_only_distance(a: tuple[float, int], b: tuple[float, int]) -> float:
+    """Distanza basata solo sul pitch (ignora il tempo).
+
+    Utile quando le due sequenze hanno scale temporali diverse (es. tempi
+    dimezzati): il DTW deve allinearle per contenuto melodico, lasciando che
+    sia il warping a gestire lo scorrimento temporale.
+    """
+    return abs(a[1] - b[1])
+
+
 def compute_dtw_alignment(
     predicted_seq: list[dict[str, Any]],
     reference_seq: list[dict[str, Any]],
+    dist=pitch_time_distance,
 ) -> list[tuple[int, int]]:
     """
     Allinea la sequenza predetta alla sequenza di riferimento usando DTW.
@@ -81,6 +112,9 @@ def compute_dtw_alignment(
             Ogni nota ha almeno i campi "time" e "pitch".
         reference_seq: Sequenza di note dallo spartito (ground truth).
             Ogni nota ha almeno i campi "time" e "pitch".
+        dist: funzione di distanza tra punti (time, pitch). Default combina
+            pitch e tempo; passare pitch_only_distance per allineare solo
+            sul contenuto melodico (robusto a scale temporali diverse).
 
     Returns:
         Lista di coppie (idx_predicted, idx_reference) che rappresentano
@@ -90,12 +124,16 @@ def compute_dtw_alignment(
         logger.warning("Una delle sequenze è vuota, impossibile allineare.")
         return []
 
+    # Uniforma la chiave del pitch (pitch / midi_pitch)
+    predicted_seq = _normalize_pitch(predicted_seq)
+    reference_seq = _normalize_pitch(reference_seq)
+
     # Converti le sequenze in array di (time, pitch) per il DTW
     pred_array = [(n["time"], n["pitch"]) for n in predicted_seq]
     ref_array = [(n["time"], n["pitch"]) for n in reference_seq]
 
-    # Esegui FastDTW con la metrica di distanza personalizzata
-    distance, path = fastdtw(pred_array, ref_array, dist=pitch_time_distance)
+    # Esegui FastDTW con la metrica di distanza scelta
+    distance, path = fastdtw(pred_array, ref_array, dist=dist)
 
     logger.info(
         f"DTW completato — Distanza totale: {distance:.2f}, "
@@ -120,6 +158,10 @@ def estimate_global_offset(
     """
     if not predicted_seq or not reference_seq:
         return 0.0
+
+    # Uniforma la chiave del pitch (pitch / midi_pitch)
+    predicted_seq = _normalize_pitch(predicted_seq)
+    reference_seq = _normalize_pitch(reference_seq)
 
     # Consideriamo una finestra dei primi 40 elementi di ciascuna sequenza
     diffs = []
@@ -159,12 +201,16 @@ def classify_errors(
     bipartito (Hungarian algorithm) tra le due sequenze, guidato dalle adiacenze
     identificate dal DTW o dalla vicinanza temporale.
     """
+    # Uniforma la chiave del pitch (pitch / midi_pitch)
+    predicted_seq = _normalize_pitch(predicted_seq)
+    reference_seq = _normalize_pitch(reference_seq)
+
     n_pred = len(predicted_seq)
     n_ref = len(reference_seq)
-    
+
     if n_pred == 0:
         errors = []
-        for r_note in reference_seq:
+        for r_idx, r_note in enumerate(reference_seq):
             errors.append({
                 "time": round(r_note["time"], 3),
                 "expected": r_note.get("note_name", str(r_note["pitch"])),
@@ -173,12 +219,14 @@ def classify_errors(
                 "played_pitch": None,
                 "status": "missing",
                 "delta_t": None,
+                "pred_idx": None,
+                "ref_idx": r_idx,
             })
         return errors
 
     if n_ref == 0:
         errors = []
-        for p_note in predicted_seq:
+        for p_idx, p_note in enumerate(predicted_seq):
             time_to_display = p_note.get("time_original", p_note["time"])
             errors.append({
                 "time": round(time_to_display, 3),
@@ -188,6 +236,8 @@ def classify_errors(
                 "played_pitch": p_note["pitch"],
                 "status": "extra",
                 "delta_t": None,
+                "pred_idx": p_idx,
+                "ref_idx": None,
             })
         return errors
 
@@ -248,8 +298,10 @@ def classify_errors(
             "played_pitch": pred_note["pitch"],
             "status": status,
             "delta_t": round(delta_t, 3),
+            "pred_idx": int(p),
+            "ref_idx": int(r),
         })
-        
+
         matched_pred.add(p)
         matched_ref.add(r)
 
@@ -265,6 +317,8 @@ def classify_errors(
                 "played_pitch": None,
                 "status": "missing",
                 "delta_t": None,
+                "pred_idx": None,
+                "ref_idx": int(r),
             })
 
     # Note predette non accoppiate -> extra
@@ -280,6 +334,8 @@ def classify_errors(
                 "played_pitch": p_note["pitch"],
                 "status": "extra",
                 "delta_t": None,
+                "pred_idx": int(p),
+                "ref_idx": None,
             })
 
     errors.sort(key=lambda x: x["time"])
@@ -328,6 +384,58 @@ def build_error_log(errors: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def align_for_visualization(
+    predicted_notes: list[dict[str, Any]],
+    reference_notes: list[dict[str, Any]],
+    time_tolerance: float = config.TIME_TOLERANCE,
+) -> dict[str, Any]:
+    """
+    Esegue l'intero allineamento e restituisce TUTTO ciò che serve sia al
+    report sia alla visualizzazione (a differenza di run_alignment, che
+    restituisce solo il report filtrato).
+
+    Returns:
+        dict con:
+        - "shifted_predicted": note predette dopo la correzione dell'offset
+                               (hanno "time" corretto e "time_original").
+        - "reference":         note di riferimento (con chiave "pitch" garantita).
+        - "all_errors":        classificazione COMPLETA, incl. le note "correct",
+                               ogni record con "pred_idx"/"ref_idx".
+        - "error_log":         report aggregato (come run_alignment).
+        - "global_offset":     offset temporale stimato (s).
+    """
+    # 1. Stima e correzione dell'offset globale
+    global_offset = estimate_global_offset(predicted_notes, reference_notes)
+
+    shifted_predicted = []
+    for note in predicted_notes:
+        shifted_note = note.copy()
+        shifted_note["time_original"] = note["time"]
+        shifted_note["time"] = max(0.0, note["time"] - global_offset)
+        shifted_predicted.append(shifted_note)
+
+    # Riferimento con chiave "pitch" garantita (per coerenza con gli indici)
+    reference = _normalize_pitch(reference_notes)
+
+    # 2. Allineamento grossolano DTW sulla sequenza shiftata
+    path = compute_dtw_alignment(shifted_predicted, reference)
+
+    # 3. Allineamento di dettaglio e classificazione (lista COMPLETA)
+    all_errors = classify_errors(path, shifted_predicted, reference, time_tolerance)
+
+    # 4. Report strutturato (filtra i "correct")
+    error_log = build_error_log(all_errors)
+    error_log["summary"]["estimated_global_offset_sec"] = round(global_offset, 3)
+
+    return {
+        "shifted_predicted": shifted_predicted,
+        "reference": reference,
+        "all_errors": all_errors,
+        "error_log": error_log,
+        "global_offset": global_offset,
+    }
+
+
 def run_alignment(
     predicted_notes: list[dict[str, Any]],
     reference_notes: list[dict[str, Any]],
@@ -336,32 +444,14 @@ def run_alignment(
     """
     Funzione di alto livello che esegue l'intero Modulo 3:
     stima offset + allineamento DTW + Bipartite Matching + classificazione errori.
+
+    Restituisce il report aggregato (summary + errori significativi).
     """
     logger.info(
         f"Alignment — Predette: {len(predicted_notes)} note, "
         f"Riferimento: {len(reference_notes)} note"
     )
 
-    # 1. Stima e correzione dell'offset globale
-    global_offset = estimate_global_offset(predicted_notes, reference_notes)
-    
-    shifted_predicted = []
-    for note in predicted_notes:
-        shifted_note = note.copy()
-        shifted_note["time_original"] = note["time"]
-        shifted_note["time"] = max(0.0, note["time"] - global_offset)
-        shifted_predicted.append(shifted_note)
-
-    # 2. Allineamento grossolano DTW sulla sequenza shiftata
-    path = compute_dtw_alignment(shifted_predicted, reference_notes)
-
-    # 3. Allineamento di dettaglio e classificazione con Algoritmo Ungherese
-    errors = classify_errors(path, shifted_predicted, reference_notes, time_tolerance)
-
-    # 4. Report strutturato
-    error_log = build_error_log(errors)
-    
-    # Aggiungiamo l'offset stimato al summary per trasparenza
-    error_log["summary"]["estimated_global_offset_sec"] = round(global_offset, 3)
-
-    return error_log
+    return align_for_visualization(
+        predicted_notes, reference_notes, time_tolerance
+    )["error_log"]

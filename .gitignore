@@ -53,6 +53,15 @@ output/
 predictions/
 dtw_results/
 
+# Artefatti generati dalla pipeline offline: matrici CQT, immagini e JSON.
+# I file già tracciati restano; questi pattern ignorano solo i NUOVI file.
+# (i .csv vengono mantenuti)
+*.npy
+output_cqt/**/*.png
+output_cqt/**/*.json
+output_notes/**/*.png
+output_notes/**/*.json
+
 # ==========================================
 # Test e Dati Custom
 # ==========================================
