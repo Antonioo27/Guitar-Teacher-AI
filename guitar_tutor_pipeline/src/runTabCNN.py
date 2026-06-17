@@ -231,6 +231,149 @@ def run_model(model, input_tensor: torch.Tensor) -> tuple[np.ndarray, np.ndarray
 
 
 # =========================================================================
+# Rilevamento onset dalla CQT (per distinguere ribattuti da note sostenute)
+# =========================================================================
+def detect_onset_times(
+    cqt_norm: np.ndarray,
+    hop_length: int,
+    sr: int,
+    delta: float = 0.07,
+) -> np.ndarray:
+    """
+    Rileva gli istanti di attacco (onset) direttamente dalla matrice CQT.
+
+    Idea: un nuovo attacco (pizzicata) produce un aumento improvviso di
+    energia nello spettro → spectral flux = somma delle differenze POSITIVE
+    tra frame consecutivi. Una nota sostenuta che il modello "perde" non ha
+    questo picco. Usiamo il flux come inviluppo di onset e ne estraiamo i
+    picchi con il peak-picker di librosa.
+
+    Args:
+        cqt_norm:   matrice (n_bins, T) normalizzata, la stessa data al modello.
+        hop_length: hop usato per generare la CQT (per convertire frame → secondi).
+        sr:         sample rate usato per generare la CQT.
+        delta:      soglia di prominenza del picco (più alto = meno onset).
+
+    Returns:
+        onset_times: array di istanti (secondi) in cui c'è un attacco.
+    """
+    import librosa
+
+    # Spectral flux: solo le variazioni positive (l'energia che "sale")
+    flux = np.maximum(np.diff(cqt_norm, axis=1), 0.0).sum(axis=0)
+    if flux.max() > 0:
+        flux = flux / flux.max()
+
+    onset_frames = librosa.onset.onset_detect(
+        onset_envelope=flux,
+        sr=sr,
+        hop_length=hop_length,
+        delta=delta,
+        backtrack=False,
+    )
+    onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
+
+    logger.info(f"  Onset rilevati dalla CQT: {len(onset_times)}")
+    return onset_times
+
+
+# =========================================================================
+# Risoluzione delle "ghost note" + frammenti di note sostenute
+# =========================================================================
+def resolve_ghost_notes(
+    notes: list[dict],
+    max_gap_s: float = 0.12,
+    onset_times: np.ndarray | None = None,
+    onset_tol_s: float = 0.07,
+) -> list[dict]:
+    """
+    Fonde i frammenti che appartengono alla stessa nota fisica, risolvendo
+    due problemi insieme:
+
+    1. Ghost note (collisione inter-corda)
+       Lo stesso pitch acceso su più corde dalle 6 softmax indipendenti di
+       TabCNN. Una nota pizzicata vive su UNA sola corda.
+
+    2. Note sostenute spezzate (dropout del modello)
+       Una nota lunga in cui la confidenza cala a metà, generando due
+       frammenti separati da un gap.
+
+    Strategia (onset-aware)
+    -----------------------
+    Raggruppa per PITCH (ignorando la corda). Due frammenti consecutivi dello
+    stesso pitch vengono fusi se sono lo stesso evento fisico. Il criterio NON
+    è (solo) la distanza temporale, ma la presenza di un ATTACCO:
+
+      - se all'inizio del secondo frammento NON c'è un onset → è la stessa
+        nota sostenuta/ghost → FONDI (anche con gap ampio);
+      - se c'è un onset → è un ri-pizzicato → tieni SEPARATO (anche se vicino).
+
+    Se onset_times è None si ricade sul solo criterio di gap (max_gap_s).
+    La nota risultante copre l'intervallo unione ed eredita corda/tasto/
+    confidenza dal frammento con la CONFIDENZA DI PICCO più alta.
+
+    Args:
+        notes:       note decodificate.
+        max_gap_s:   gap massimo di sicurezza usato come fallback (e quando
+                     non ci sono informazioni di onset).
+        onset_times: istanti di attacco (secondi) rilevati dalla CQT.
+        onset_tol_s: tolleranza per associare un onset all'inizio di una nota.
+
+    Returns:
+        Lista di note fuse, riordinata per onset.
+    """
+    if not notes:
+        return notes
+
+    def _has_onset_at(t: float) -> bool:
+        """C'è un attacco rilevato vicino all'istante t?"""
+        if onset_times is None or len(onset_times) == 0:
+            return False
+        return bool(np.any(np.abs(onset_times - t) <= onset_tol_s))
+
+    from collections import defaultdict
+    by_pitch: dict[int, list[dict]] = defaultdict(list)
+    for n in notes:
+        by_pitch[n["pitch"]].append(n)
+
+    def _flush(cluster: list[dict]) -> dict:
+        # Rappresentante = frammento con confidenza di picco massima
+        best = max(cluster, key=lambda x: x.get("confidence", 0.0))
+        start = min(c["time"] for c in cluster)
+        end = max(c["time"] + c["duration"] for c in cluster)
+        merged = dict(best)
+        merged["time"] = round(start, 4)
+        merged["duration"] = round(end - start, 4)
+        return merged
+
+    resolved: list[dict] = []
+    for pitch, group in by_pitch.items():
+        group.sort(key=lambda x: x["time"])
+
+        cluster = [group[0]]
+        cluster_end = group[0]["time"] + group[0]["duration"]
+
+        for nxt in group[1:]:
+            gap = nxt["time"] - cluster_end
+            # Fondi se: nessun attacco all'inizio del frammento successivo
+            # (nota sostenuta/ghost) OPPURE gap minimo di sicurezza.
+            same_note = (not _has_onset_at(nxt["time"])) or (gap <= max_gap_s)
+
+            if same_note:
+                cluster.append(nxt)
+                cluster_end = max(cluster_end, nxt["time"] + nxt["duration"])
+            else:
+                resolved.append(_flush(cluster))
+                cluster = [nxt]
+                cluster_end = nxt["time"] + nxt["duration"]
+
+        resolved.append(_flush(cluster))
+
+    resolved.sort(key=lambda x: (x["time"], x.get("string", -1)))
+    return resolved
+
+
+# =========================================================================
 # Stampa a schermo della tablatura predetta
 # =========================================================================
 def print_notes_table(notes: list[dict]) -> None:
@@ -338,6 +481,28 @@ def main():
         default=None,
         help="Cartella dove salvare le note (.json + .csv). Se omesso, stampa solo a schermo.",
     )
+    parser.add_argument(
+        "--no-ghost-fix",
+        action="store_true",
+        help="Disattiva la risoluzione delle ghost note (collisioni di pitch tra corde).",
+    )
+    parser.add_argument(
+        "--ghost-gap",
+        type=float,
+        default=0.12,
+        help="Gap di sicurezza (s) per fondere frammenti dello stesso pitch (default: 0.12).",
+    )
+    parser.add_argument(
+        "--no-onsets",
+        action="store_true",
+        help="Non usare gli onset della CQT: fonde i frammenti solo in base al gap.",
+    )
+    parser.add_argument(
+        "--onset-delta",
+        type=float,
+        default=0.07,
+        help="Soglia di prominenza per il rilevamento onset dalla CQT (default: 0.07).",
+    )
     args = parser.parse_args()
 
     logger.info("🎸 Trascrizione CQT(.npy) → Note con TabCNN")
@@ -369,6 +534,26 @@ def main():
         hop_length=args.hop_length,
         sr=args.sr,
     )
+
+    # ── Risoluzione ghost note + frammenti di note sostenute ────────────
+    if not args.no_ghost_fix:
+        # Rileva gli onset dalla CQT per distinguere ribattuti da note sostenute,
+        # a meno che l'utente non abbia disattivato l'uso degli onset.
+        onset_times = None
+        if not args.no_onsets:
+            onset_times = detect_onset_times(
+                cqt_norm, hop_length=args.hop_length, sr=args.sr, delta=args.onset_delta
+            )
+
+        before = len(notes)
+        notes = resolve_ghost_notes(
+            notes, max_gap_s=args.ghost_gap, onset_times=onset_times
+        )
+        logger.info(
+            f"  Ghost-fix (gap {args.ghost_gap*1000:.0f}ms, "
+            f"onset {'off' if onset_times is None else 'on'}): "
+            f"{before} → {len(notes)} note (fuse {before - len(notes)})"
+        )
 
     # ── Output ──────────────────────────────────────────────────────────
     print_notes_table(notes)

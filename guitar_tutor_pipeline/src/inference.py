@@ -99,7 +99,7 @@ def decode_predictions(
     hop_length: int = config.HOP_LENGTH,
     sr: int = config.SAMPLE_RATE,
     confidence_threshold: float = config.ONSET_THRESHOLD,
-    gap_fill_s: float = 0.10,
+    gap_fill_s: float = 0.200,
 ) -> list[dict]:
     """
     Decodifica le predizioni frame-by-frame della TabCNN in una sequenza
@@ -129,7 +129,7 @@ def decode_predictions(
     prev_fret = [-1] * num_strings  # -1 = corda non attiva
     
     # Soglia di rilascio inferiore per evitare oscillazioni rapide (chattering)
-    release_threshold = confidence_threshold * 0.6
+    release_threshold = confidence_threshold * 0.3
 
     for t in range(n_frames):
         time_sec = t * frame_duration
