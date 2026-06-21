@@ -45,6 +45,7 @@ from .runTabCNN import (
     run_model,
     detect_onset_times,
     resolve_ghost_notes,
+    filter_short_notes,
     save_notes,
 )
 from .compareWithMidi import run_comparison
@@ -84,10 +85,14 @@ def main():
                         help=f"Sample rate usato per generare il .npy (default: {CQT_SR})")
     parser.add_argument("--hop_length", type=int, default=CQT_HOP,
                         help=f"Hop length usato per generare il .npy (default: {CQT_HOP})")
+    parser.add_argument("--gap-fill", type=float, default=0.06,
+                        help="Gap fill (s) nel decoder: unisce solo il chattering, non i ri-pizzicati (default: 0.06).")
+    parser.add_argument("--min-duration", type=float, default=0.12,
+                        help="Durata minima (s): note più corte vengono scartate come artefatti (default: 0.12).")
     parser.add_argument("--no-ghost-fix", action="store_true",
                         help="Disattiva la risoluzione delle ghost note.")
-    parser.add_argument("--ghost-gap", type=float, default=0.12,
-                        help="Gap di sicurezza (s) per fondere frammenti dello stesso pitch (default: 0.12).")
+    parser.add_argument("--ghost-gap", type=float, default=0.06,
+                        help="Gap di anti-chattering (s) per fondere frammenti dello stesso pitch (default: 0.06).")
     parser.add_argument("--no-onsets", action="store_true",
                         help="Non usare gli onset della CQT nella risoluzione ghost.")
     parser.add_argument("--onset-delta", type=float, default=0.07,
@@ -119,7 +124,8 @@ def main():
 
     predictions, confidences = run_model(model, input_tensor)
     notes = decode_predictions(
-        predictions, confidences, hop_length=args.hop_length, sr=args.sr
+        predictions, confidences, hop_length=args.hop_length, sr=args.sr,
+        gap_fill_s=args.gap_fill,
     )
 
     if not args.no_ghost_fix:
@@ -133,6 +139,9 @@ def main():
         logger.info(
             f"  Ghost-fix: {before} → {len(notes)} note (fuse {before - len(notes)})"
         )
+
+    # Filtro durata minima: rimuove i micro-frammenti residui
+    notes = filter_short_notes(notes, min_duration_s=args.min_duration)
 
     logger.info(f"  Note predette: {len(notes)}")
 

@@ -51,7 +51,7 @@
     "note_name": "A#3",
     "string": 3,
     "fret": 3,
-    "confidence": 0.7667
+    "confidence": 0.9548
   },
   {
     "time": 7.8716,
@@ -103,8 +103,8 @@
     "duration": 1.2306,
     "pitch": 58,
     "note_name": "A#3",
-    "string": 2,
-    "fret": 8,
-    "confidence": 0.7591
+    "string": 3,
+    "fret": 3,
+    "confidence": 0.8863
   }
 ]

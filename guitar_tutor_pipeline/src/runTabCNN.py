@@ -282,9 +282,9 @@ def detect_onset_times(
 # =========================================================================
 def resolve_ghost_notes(
     notes: list[dict],
-    max_gap_s: float = 0.12,
+    max_gap_s: float = 0.06,
     onset_times: np.ndarray | None = None,
-    onset_tol_s: float = 0.07,
+    onset_tol_s: float = 0.06,
 ) -> list[dict]:
     """
     Fonde i frammenti che appartengono alla stessa nota fisica, risolvendo
@@ -302,11 +302,18 @@ def resolve_ghost_notes(
     -----------------------
     Raggruppa per PITCH (ignorando la corda). Due frammenti consecutivi dello
     stesso pitch vengono fusi se sono lo stesso evento fisico. Il criterio NON
-    è (solo) la distanza temporale, ma la presenza di un ATTACCO:
+    è (solo) la distanza temporale, ma la presenza di un ATTACCO nell'INTERVALLO
+    DEL GAP tra i due frammenti:
 
-      - se all'inizio del secondo frammento NON c'è un onset → è la stessa
-        nota sostenuta/ghost → FONDI (anche con gap ampio);
-      - se c'è un onset → è un ri-pizzicato → tieni SEPARATO (anche se vicino).
+      - se NESSUN onset cade nel gap [fine_cluster, inizio_frammento] → è la
+        stessa nota sostenuta/ghost → FONDI (anche con gap ampio);
+      - se un onset cade nel gap → è un ri-pizzicato → tieni SEPARATO.
+
+    Perché l'intervallo e non il solo inizio del frammento: il decoder spesso
+    apre il frammento successivo in RITARDO rispetto all'attacco reale (anche
+    150-200ms), quindi un controllo puntuale sull'inizio mancherebbe l'onset.
+    Cercare l'onset in tutto il gap cattura il ri-pizzicato anche se il modello
+    è in ritardo.
 
     Se onset_times è None si ricade sul solo criterio di gap (max_gap_s).
     La nota risultante copre l'intervallo unione ed eredita corda/tasto/
@@ -314,10 +321,12 @@ def resolve_ghost_notes(
 
     Args:
         notes:       note decodificate.
-        max_gap_s:   gap massimo di sicurezza usato come fallback (e quando
-                     non ci sono informazioni di onset).
+        max_gap_s:   gap di anti-chattering: due frammenti più vicini di questo
+                     vengono fusi comunque (filtra il flicker del decoder). È
+                     anche l'unico criterio quando non ci sono onset.
         onset_times: istanti di attacco (secondi) rilevati dalla CQT.
-        onset_tol_s: tolleranza per associare un onset all'inizio di una nota.
+        onset_tol_s: tolleranza con cui si allarga l'intervallo del gap quando
+                     si cerca un onset.
 
     Returns:
         Lista di note fuse, riordinata per onset.
@@ -325,11 +334,13 @@ def resolve_ghost_notes(
     if not notes:
         return notes
 
-    def _has_onset_at(t: float) -> bool:
-        """C'è un attacco rilevato vicino all'istante t?"""
-        if onset_times is None or len(onset_times) == 0:
+    have_onsets = onset_times is not None and len(onset_times) > 0
+
+    def _onset_in_gap(t0: float, t1: float) -> bool:
+        """C'è un attacco rilevato nell'intervallo [t0, t1] (con tolleranza)?"""
+        if not have_onsets:
             return False
-        return bool(np.any(np.abs(onset_times - t) <= onset_tol_s))
+        return bool(np.any((onset_times >= t0 - onset_tol_s) & (onset_times <= t1 + onset_tol_s)))
 
     from collections import defaultdict
     by_pitch: dict[int, list[dict]] = defaultdict(list)
@@ -355,9 +366,13 @@ def resolve_ghost_notes(
 
         for nxt in group[1:]:
             gap = nxt["time"] - cluster_end
-            # Fondi se: nessun attacco all'inizio del frammento successivo
-            # (nota sostenuta/ghost) OPPURE gap minimo di sicurezza.
-            same_note = (not _has_onset_at(nxt["time"])) or (gap <= max_gap_s)
+            if have_onsets:
+                # Fondi se NON c'è un attacco nel gap (nota sostenuta/ghost)
+                # OPPURE se il gap è sotto la soglia di anti-chattering.
+                same_note = (not _onset_in_gap(cluster_end, nxt["time"])) or (gap <= max_gap_s)
+            else:
+                # Senza onset: ricade sul solo criterio di gap.
+                same_note = gap <= max_gap_s
 
             if same_note:
                 cluster.append(nxt)
@@ -371,6 +386,31 @@ def resolve_ghost_notes(
 
     resolved.sort(key=lambda x: (x["time"], x.get("string", -1)))
     return resolved
+
+
+# =========================================================================
+# Filtro durata minima — rimuove frammenti spuri troppo corti
+# =========================================================================
+def filter_short_notes(notes: list[dict], min_duration_s: float = 0.12) -> list[dict]:
+    """
+    Scarta le note più corte di min_duration_s.
+
+    Dopo la fusione onset-aware rimangono a volte micro-frammenti (<120ms)
+    generati da artefatti del modello (echi spettrali, misclassificazioni
+    brevi). Sono tipicamente più corti di qualsiasi nota realmente suonata,
+    quindi un filtro di durata li elimina senza toccare le note vere.
+    """
+    if min_duration_s <= 0:
+        return notes
+    before = len(notes)
+    result = [n for n in notes if n.get("duration", 0.0) >= min_duration_s]
+    removed = before - len(result)
+    if removed:
+        logger.info(
+            f"  Filtro durata (>={min_duration_s*1000:.0f}ms): "
+            f"{before} → {len(result)} note (scartate {removed})"
+        )
+    return result
 
 
 # =========================================================================
@@ -482,6 +522,19 @@ def main():
         help="Cartella dove salvare le note (.json + .csv). Se omesso, stampa solo a schermo.",
     )
     parser.add_argument(
+        "--gap-fill",
+        type=float,
+        default=0.06,
+        help="Gap fill (s) nel decoder: unisce solo il chattering frame-level. "
+             "Tenuto basso per non pre-fondere i ri-pizzicati prima della fase onset-aware (default: 0.06).",
+    )
+    parser.add_argument(
+        "--min-duration",
+        type=float,
+        default=0.12,
+        help="Durata minima (s): note più corte vengono scartate come artefatti (default: 0.12).",
+    )
+    parser.add_argument(
         "--no-ghost-fix",
         action="store_true",
         help="Disattiva la risoluzione delle ghost note (collisioni di pitch tra corde).",
@@ -489,8 +542,8 @@ def main():
     parser.add_argument(
         "--ghost-gap",
         type=float,
-        default=0.12,
-        help="Gap di sicurezza (s) per fondere frammenti dello stesso pitch (default: 0.12).",
+        default=0.06,
+        help="Gap di anti-chattering (s) per fondere frammenti dello stesso pitch (default: 0.06).",
     )
     parser.add_argument(
         "--no-onsets",
@@ -528,11 +581,14 @@ def main():
     predictions, confidences = run_model(model, input_tensor)
 
     # ── Decodifica frame-wise → note (riusa il decoder di inference.py) ─
+    # gap_fill ridotto: unisce solo il chattering, lascia intatti i ri-pizzicati
+    # così che la fase onset-aware sotto possa decidere se separarli.
     notes = decode_predictions(
         predictions,
         confidences,
         hop_length=args.hop_length,
         sr=args.sr,
+        gap_fill_s=args.gap_fill,
     )
 
     # ── Risoluzione ghost note + frammenti di note sostenute ────────────
@@ -554,6 +610,9 @@ def main():
             f"onset {'off' if onset_times is None else 'on'}): "
             f"{before} → {len(notes)} note (fuse {before - len(notes)})"
         )
+
+    # ── Filtro durata minima: rimuove i micro-frammenti residui ─────────
+    notes = filter_short_notes(notes, min_duration_s=args.min_duration)
 
     # ── Output ──────────────────────────────────────────────────────────
     print_notes_table(notes)

@@ -24,7 +24,7 @@ WEIGHTS_DIR = DATA_DIR / "GuitarSet"
 # =============================================================================
 # Modulo 1 — Parametri Audio & CQT
 # =============================================================================
-SAMPLE_RATE = 44100           # Frequenza di campionamento standard (Hz)
+SAMPLE_RATE = 22050           # Frequenza di campionamento standard (Hz)
 HOP_LENGTH = 512              # Hop length per la CQT (campioni)
 N_BINS = 192                  # Numero totale di bin frequenziali nella CQT
 BINS_PER_OCTAVE = 24          # Risoluzione frequenziale (24 = quarti di tono)
