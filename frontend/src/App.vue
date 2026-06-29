@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import FileUpload from './components/FileUpload.vue'
 import AnalysisResults from './components/AnalysisResults.vue'
 import FeedbackPanel from './components/FeedbackPanel.vue'
@@ -19,9 +19,14 @@ const results = ref(null)
 const error = ref(null)
 const serverStatus = ref(null)
 
+// Model selection
+const availableModels = ref([])
+const currentModel = ref('')
+const isModelSwitching = ref(false)
+
 // Computed
 const canAnalyze = computed(() => {
-  return audioFile.value && referenceFile.value && !isLoading.value
+  return audioFile.value && referenceFile.value && !isLoading.value && !isModelSwitching.value
 })
 
 // Check server health on mount
@@ -33,7 +38,53 @@ async function checkServer() {
     serverStatus.value = { status: 'offline' }
   }
 }
-checkServer()
+
+// Fetch available models
+async function fetchModels() {
+  try {
+    const res = await fetch(`${API_BASE}/api/models`)
+    if (res.ok) {
+      const data = await res.json()
+      availableModels.value = data.models
+      currentModel.value = data.current_model
+    }
+  } catch (e) {
+    console.error('Errore nel caricamento dei modelli:', e)
+  }
+}
+
+// Switch model
+async function switchModel(modelName) {
+  if (modelName === currentModel.value) return
+
+  isModelSwitching.value = true
+  error.value = null
+
+  try {
+    const res = await fetch(`${API_BASE}/api/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName }),
+    })
+
+    if (!res.ok) {
+      const errData = await res.json()
+      throw new Error(errData.detail || `Errore ${res.status}`)
+    }
+
+    const data = await res.json()
+    currentModel.value = data.current_model
+  } catch (e) {
+    error.value = `Errore nel cambio modello: ${e.message}`
+  } finally {
+    isModelSwitching.value = false
+  }
+}
+
+onMounted(() => {
+  checkServer()
+  fetchModels()
+})
 
 // Run analysis
 async function runAnalysis() {
@@ -51,7 +102,7 @@ async function runAnalysis() {
   formData.append('generate_feedback', generateFeedback.value)
 
   try {
-    loadingMessage.value = 'Trascrizione audio con TabCNN...'
+    loadingMessage.value = `Trascrizione audio con ${currentModel.value}...`
 
     const res = await fetch(`${API_BASE}/api/analyze`, {
       method: 'POST',
@@ -101,6 +152,44 @@ function resetAll() {
     <main class="app-main">
       <!-- Upload Section -->
       <section v-if="!results" class="upload-section fade-in">
+        <!-- Model Selector -->
+        <div class="model-selector card">
+          <div class="model-selector-header">
+            <span class="model-icon">🧠</span>
+            <div>
+              <h3 class="model-title">Modello di Trascrizione</h3>
+              <p class="model-description">Seleziona il modello da utilizzare per l'analisi</p>
+            </div>
+          </div>
+          <div class="model-options">
+            <button
+              v-for="model in availableModels"
+              :key="model.name"
+              :id="`model-btn-${model.name.toLowerCase()}`"
+              class="model-option"
+              :class="{
+                active: currentModel === model.name,
+                disabled: !model.weights_available,
+                switching: isModelSwitching
+              }"
+              :disabled="isModelSwitching || !model.weights_available"
+              @click="switchModel(model.name)"
+            >
+              <div class="model-option-header">
+                <span class="model-option-indicator" :class="{ active: currentModel === model.name }"></span>
+                <span class="model-option-name">{{ model.name }}</span>
+                <span v-if="currentModel === model.name" class="model-active-badge">Attivo</span>
+                <span v-if="!model.weights_available" class="model-unavailable-badge">Pesi mancanti</span>
+              </div>
+              <p class="model-option-desc">{{ model.description }}</p>
+            </button>
+          </div>
+          <div v-if="isModelSwitching" class="model-switching-indicator">
+            <div class="mini-spinner"></div>
+            <span>Cambio modello in corso...</span>
+          </div>
+        </div>
+
         <div class="upload-grid">
           <!-- Audio File -->
           <FileUpload
@@ -184,10 +273,10 @@ function resetAll() {
           <p class="loading-message">{{ loadingMessage }}</p>
           <div class="loading-steps">
             <div class="step" :class="{ active: loadingMessage.includes('audio') }">
-              <span class="step-num">1</span> Preprocessing CQT
+              <span class="step-num">1</span> Preprocessing
             </div>
-            <div class="step" :class="{ active: loadingMessage.includes('TabCNN') }">
-              <span class="step-num">2</span> Inferenza TabCNN
+            <div class="step" :class="{ active: loadingMessage.includes(currentModel) }">
+              <span class="step-num">2</span> {{ currentModel }}
             </div>
             <div class="step" :class="{ active: loadingMessage.includes('risultati') }">
               <span class="step-num">3</span> DTW + Feedback
@@ -198,6 +287,10 @@ function resetAll() {
 
       <!-- Results -->
       <section v-if="results && !isLoading" class="results-section fade-in-stagger">
+        <div v-if="results.model_used" class="model-used-banner card">
+          <span class="model-used-icon">🧠</span>
+          Risultati ottenuti con il modello <strong>{{ results.model_used }}</strong>
+        </div>
         <AnalysisResults :results="results" />
         <FeedbackPanel
           v-if="results.feedback"
@@ -277,6 +370,173 @@ function resetAll() {
   margin: 0 auto;
   padding: 2rem;
   width: 100%;
+}
+
+/* Model Selector */
+.model-selector {
+  margin-bottom: 1.5rem;
+}
+
+.model-selector-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.model-icon {
+  font-size: 1.5rem;
+}
+
+.model-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.model-description {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0;
+}
+
+.model-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .model-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.model-option {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  text-align: left;
+  color: var(--text-primary);
+  font-family: var(--font-family);
+}
+
+.model-option:hover:not(.disabled):not(.switching) {
+  border-color: var(--accent-primary);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.model-option.active {
+  border-color: var(--accent-primary);
+  background: rgba(245, 158, 11, 0.08);
+  box-shadow: 0 0 0 1px var(--accent-primary), 0 0 12px rgba(245, 158, 11, 0.12);
+}
+
+.model-option.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.model-option.switching {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.model-option-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.model-option-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-color);
+  transition: all var(--transition-normal);
+  flex-shrink: 0;
+}
+
+.model-option-indicator.active {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+}
+
+.model-option-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.model-active-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: rgba(245, 158, 11, 0.15);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.model-unavailable-badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.model-option-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.model-switching-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--accent-primary);
+}
+
+.mini-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Model used banner in results */
+.model-used-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.model-used-icon {
+  font-size: 1.1rem;
+}
+
+.model-used-banner strong {
+  color: var(--accent-primary);
 }
 
 /* Upload Grid */

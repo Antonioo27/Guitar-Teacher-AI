@@ -1,4 +1,4 @@
----
+
 
 # **AI Guitar Tutor \- Trascrizione Neurale e Allineamento Sequenziale per la Valutazione Esecutiva**
 

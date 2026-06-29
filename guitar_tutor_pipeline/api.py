@@ -4,6 +4,7 @@ api.py — REST API per il frontend Vue dell'AI Guitar Tutor.
 Espone la pipeline come servizio web con FastAPI:
 - Upload file audio (.wav)
 - Upload spartito di riferimento (.mid/.jams)
+- Selezione del modello di trascrizione (TabCNN / CRNN)
 - Esecuzione della pipeline
 - Restituzione dei risultati (errori + feedback LLM)
 
@@ -17,18 +18,22 @@ import logging
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from .src import config
-from .src.model import load_model, TabCNN
-from .src.inference import transcribe_audio
-from .src.alignment import run_alignment
-from .src.feedback import generate_feedback
-from .src.dataset import parse_midi, parse_jams, build_note_sequence
+from .src.app import config
+from .src.app.model_registry import (
+    load_model,
+    transcribe,
+    get_available_models,
+)
+from .src.app.alignment import run_alignment
+from .src.app.feedback import generate_feedback
+from .src.app.dataset import parse_midi, parse_jams, build_note_sequence
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -43,7 +48,7 @@ logging.basicConfig(
 app = FastAPI(
     title="AI Guitar Tutor",
     description="Trascrizione neurale e valutazione dell'esecuzione chitarristica",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 # CORS — permetti il frontend Vue (dev su porta 5173)
@@ -56,22 +61,61 @@ app.add_middleware(
 )
 
 # =========================================================================
-# Caricamento del modello (una volta sola all'avvio)
+# Gestione del modello (caricamento dinamico)
 # =========================================================================
-_model: Optional[TabCNN] = None
+_model: Optional[Any] = None
+_current_model_name: str = config.DEFAULT_MODEL
 
 
-def get_model() -> TabCNN:
-    """Lazy-load del modello TabCNN."""
-    global _model
+class ModelSelection(BaseModel):
+    """Schema per la selezione del modello."""
+    model: str
+
+
+def get_model() -> tuple[Any, str]:
+    """Lazy-load del modello corrente."""
+    global _model, _current_model_name
     if _model is None:
         try:
-            _model = load_model(config.WEIGHTS_PATH)
-            logger.info("Modello TabCNN caricato con successo.")
+            _model = load_model(_current_model_name)
+            logger.info(f"Modello {_current_model_name} caricato con successo.")
         except FileNotFoundError as e:
             logger.error(f"Pesi del modello non trovati: {e}")
             raise
-    return _model
+    return _model, _current_model_name
+
+
+def _switch_model(model_name: str) -> None:
+    """Cambia il modello attivo, scaricando quello precedente."""
+    global _model, _current_model_name
+
+    if model_name not in config.AVAILABLE_MODELS:
+        raise ValueError(
+            f"Modello '{model_name}' non riconosciuto. "
+            f"Disponibili: {config.AVAILABLE_MODELS}"
+        )
+
+    if model_name == _current_model_name and _model is not None:
+        logger.info(f"Modello {model_name} già attivo.")
+        return
+
+    # Scarica il vecchio modello dalla memoria
+    if _model is not None:
+        logger.info(f"Scaricamento modello {_current_model_name}...")
+        del _model
+        _model = None
+
+        # Libera la memoria GPU se possibile
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+    _current_model_name = model_name
+    # Il modello verrà caricato al prossimo get_model()
+    logger.info(f"Modello selezionato: {model_name} (verrà caricato alla prossima richiesta)")
 
 
 # =========================================================================
@@ -90,29 +134,96 @@ def _save_upload(upload: UploadFile, suffix: str) -> Path:
 
 
 # =========================================================================
-# Endpoints
+# Endpoints — Gestione Modello
+# =========================================================================
+
+@app.get("/api/models")
+async def list_models():
+    """
+    Restituisce la lista dei modelli disponibili e il modello attualmente attivo.
+    """
+    models = get_available_models()
+    return {
+        "models": models,
+        "current_model": _current_model_name,
+    }
+
+
+@app.get("/api/model")
+async def get_current_model():
+    """Restituisce il modello attualmente selezionato."""
+    model_loaded = _model is not None
+    return {
+        "current_model": _current_model_name,
+        "model_loaded": model_loaded,
+    }
+
+
+@app.post("/api/model")
+async def set_model(selection: ModelSelection):
+    """
+    Cambia il modello di trascrizione attivo.
+
+    Body JSON: {"model": "TabCNN"} oppure {"model": "CRNN"}
+    """
+    try:
+        _switch_model(selection.model)
+        return {
+            "status": "ok",
+            "current_model": _current_model_name,
+            "message": f"Modello cambiato a {_current_model_name}",
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# =========================================================================
+# Endpoints — Salute e Configurazione
 # =========================================================================
 
 @app.get("/api/health")
 async def health_check():
     """Verifica che il server sia attivo."""
     model_loaded = _model is not None
-    weights_exist = config.WEIGHTS_PATH.exists()
     return {
         "status": "ok",
         "model_loaded": model_loaded,
-        "weights_available": weights_exist,
-        "weights_path": str(config.WEIGHTS_PATH),
+        "current_model": _current_model_name,
+        "available_models": config.AVAILABLE_MODELS,
     }
 
 
+@app.get("/api/config")
+async def get_config():
+    """Restituisce la configurazione corrente della pipeline."""
+    return {
+        "sample_rate": config.SAMPLE_RATE,
+        "hop_length": config.HOP_LENGTH,
+        "n_bins": config.N_BINS,
+        "time_tolerance": config.TIME_TOLERANCE,
+        "openai_model": config.OPENAI_MODEL,
+        "weights_path": str(config.WEIGHTS_PATH),
+        "weights_available": config.WEIGHTS_PATH.exists(),
+        "crnn_weights_path": str(config.CRNN_WEIGHTS_PATH),
+        "crnn_weights_available": config.CRNN_WEIGHTS_PATH.exists(),
+        "api_key_configured": bool(config.OPENAI_API_KEY),
+        "current_model": _current_model_name,
+        "available_models": config.AVAILABLE_MODELS,
+    }
+
+
+# =========================================================================
+# Endpoints — Trascrizione e Analisi
+# =========================================================================
+
 @app.post("/api/transcribe")
-async def transcribe(
+async def transcribe_endpoint(
     audio: UploadFile = File(..., description="File audio .wav dello studente"),
 ):
     """
     Moduli 1+2: Trascrivi un file audio in una sequenza di note.
     Restituisce le note predette senza confronto con lo spartito.
+    Usa il modello attualmente selezionato.
     """
     if not audio.filename.lower().endswith((".wav", ".mp3", ".flac")):
         raise HTTPException(400, "Formato audio non supportato. Usa .wav, .mp3 o .flac")
@@ -120,14 +231,18 @@ async def transcribe(
     audio_path = _save_upload(audio, ".wav")
 
     try:
-        model = get_model()
-        notes = transcribe_audio(str(audio_path), model)
-        return {"notes": notes, "total_notes": len(notes)}
+        model, model_name = get_model()
+        notes = transcribe(str(audio_path), model, model_name)
+        return {
+            "notes": notes,
+            "total_notes": len(notes),
+            "model_used": model_name,
+        }
     except FileNotFoundError:
         raise HTTPException(
             503,
-            "Modello non disponibile. Assicurati che i pesi siano in "
-            f"{config.WEIGHTS_DIR}/{config.WEIGHTS_FILENAME}"
+            f"Modello {_current_model_name} non disponibile. "
+            "Assicurati che i pesi siano presenti."
         )
     except Exception as e:
         logger.error(f"Errore nella trascrizione: {e}", exc_info=True)
@@ -152,6 +267,7 @@ async def analyze(
 ):
     """
     Pipeline completa: trascrizione + allineamento DTW + feedback LLM.
+    Usa il modello attualmente selezionato.
 
     Richiede:
     - File audio dell'esecuzione dello studente
@@ -171,8 +287,8 @@ async def analyze(
 
     try:
         # Fase 1+2: Trascrizione audio
-        model = get_model()
-        predicted_notes = transcribe_audio(str(audio_path), model)
+        model, model_name = get_model()
+        predicted_notes = transcribe(str(audio_path), model, model_name)
 
         # Caricamento spartito
         ref_suffix = ref_path.suffix.lower()
@@ -205,13 +321,14 @@ async def analyze(
             "error_log": error_log,
             "feedback": feedback_text,
             "feedback_error": feedback_error,
+            "model_used": model_name,
         }
 
     except FileNotFoundError:
         raise HTTPException(
             503,
-            "Modello non disponibile. Assicurati che i pesi siano in "
-            f"{config.WEIGHTS_DIR}/{config.WEIGHTS_FILENAME}"
+            f"Modello {_current_model_name} non disponibile. "
+            "Assicurati che i pesi siano presenti."
         )
     except Exception as e:
         logger.error(f"Errore nell'analisi: {e}", exc_info=True)
@@ -219,18 +336,3 @@ async def analyze(
     finally:
         audio_path.unlink(missing_ok=True)
         ref_path.unlink(missing_ok=True)
-
-
-@app.get("/api/config")
-async def get_config():
-    """Restituisce la configurazione corrente della pipeline."""
-    return {
-        "sample_rate": config.SAMPLE_RATE,
-        "hop_length": config.HOP_LENGTH,
-        "n_bins": config.N_BINS,
-        "time_tolerance": config.TIME_TOLERANCE,
-        "openai_model": config.OPENAI_MODEL,
-        "weights_path": str(config.WEIGHTS_PATH),
-        "weights_available": config.WEIGHTS_PATH.exists(),
-        "api_key_configured": bool(config.OPENAI_API_KEY),
-    }

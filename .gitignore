@@ -66,3 +66,15 @@ output_notes/**/*.json
 # Test e Dati Custom
 # ==========================================
 SetTestHomeMade/Projects/
+
+# Dataset
+gaps/
+
+# Colab
+/colab_finetune.ipynb
+
+
+# Archivio di Pesi
+*.zip
+
+/maestro_model
