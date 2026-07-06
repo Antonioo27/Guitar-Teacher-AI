@@ -346,7 +346,7 @@ def classify_errors(
 # Generazione del log errori
 # =============================================================================
 
-def build_error_log(errors: list[dict[str, Any]]) -> dict[str, Any]:
+def build_error_log(errors: list[dict[str, Any]], mir_eval_metrics: tuple[float, float, float] = None) -> dict[str, Any]:
     """
     Costruisce un report strutturato degli errori per il Modulo 4 (Feedback LLM).
 
@@ -359,7 +359,12 @@ def build_error_log(errors: list[dict[str, Any]]) -> dict[str, Any]:
 
     total = len(errors)
     correct = status_counts.get("correct", 0)
-    accuracy = (correct / total * 100) if total > 0 else 0.0
+    
+    if mir_eval_metrics is not None:
+        P, R, F1 = mir_eval_metrics
+        accuracy = F1 * 100
+    else:
+        accuracy = (correct / total * 100) if total > 0 else 0.0
 
     significant_errors = [e for e in errors if e["status"] != "correct"]
 
@@ -372,6 +377,10 @@ def build_error_log(errors: list[dict[str, Any]]) -> dict[str, Any]:
         "extra": status_counts.get("extra", 0),
         "accuracy_percent": round(accuracy, 1),
     }
+    
+    if mir_eval_metrics is not None:
+        summary["precision_percent"] = round(P * 100, 1)
+        summary["recall_percent"] = round(R * 100, 1)
 
     logger.info(
         f"Error log — Accuracy: {accuracy:.1f}%, "
@@ -423,8 +432,24 @@ def align_for_visualization(
     # 3. Allineamento di dettaglio e classificazione (lista COMPLETA)
     all_errors = classify_errors(path, shifted_predicted, reference, time_tolerance)
 
-    # 4. Report strutturato (filtra i "correct")
-    error_log = build_error_log(all_errors)
+    # 4. Calcolo F1 score usando mir_eval per consistenza con evaluate_synthetic.py
+    import mir_eval
+    
+    if not shifted_predicted or not reference:
+        P, R, F1 = 0.0, 0.0, 0.0
+    else:
+        ref_intervals = np.array([[n["time"], n["time"] + n.get("duration", 0.1)] for n in reference])
+        ref_pitches = np.array([n["pitch"] for n in reference])
+        
+        est_intervals = np.array([[n["time"], n["time"] + n.get("duration", 0.1)] for n in shifted_predicted])
+        est_pitches = np.array([n["pitch"] for n in shifted_predicted])
+        
+        P, R, F1, _ = mir_eval.transcription.precision_recall_f1_overlap(
+            ref_intervals, ref_pitches, est_intervals, est_pitches,
+            onset_tolerance=0.05, pitch_tolerance=50.0, offset_ratio=None)
+
+    # 5. Report strutturato (filtra i "correct")
+    error_log = build_error_log(all_errors, mir_eval_metrics=(P, R, F1))
     error_log["summary"]["estimated_global_offset_sec"] = round(global_offset, 3)
 
     return {

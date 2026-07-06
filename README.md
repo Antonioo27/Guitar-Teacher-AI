@@ -115,12 +115,11 @@ python -m guitar_tutor_pipeline.src.TabCNN_Architecture.predictAndCompare output
 
 ```
 
-## Verifiche
-
-- ✅ Tutti i moduli Python importabili
-- ✅ Forward pass TabCNN: `(1,1,192,9)` → `6 × (1,21)`
-- ✅ FastAPI: 4 route registrate correttamente
-- ✅ Frontend Vue: build di produzione OK (15.9 KB CSS + 75.6 KB JS)
+### Test Risultati Finali
+Per testare entrambi i modelli:
+```bash
+python -m guitar_tutor_pipeline.evaluate_models
+```
 
 ## Note
 

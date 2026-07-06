@@ -173,7 +173,7 @@ def transcribe(
 
     elif model_name == "CRNN":
         from ..CRNN_Model.inference import transcribe_full
-        raw_notes = transcribe_full(model, audio_path, device)
+        raw_notes = transcribe_full(model, audio_path, device, onset_thresh=0.05)
         notes = _crnn_notes_to_standard(raw_notes)
         logger.info(f"[CRNN] Trascritte {len(notes)} note da {audio_path}")
         return notes

@@ -21,6 +21,7 @@ PIPELINE_ROOT = PROJECT_ROOT / "guitar_tutor_pipeline"
 DATA_DIR = PIPELINE_ROOT / "data"
 GUITARSET_DIR = DATA_DIR / "GuitarSet"
 WEIGHTS_DIR = PIPELINE_ROOT / "weights"
+WEIGHTS_DIR_SYNTHTAB = PIPELINE_ROOT / "data/SynthTabWeights"
 
 # =============================================================================
 # Selezione Modello — Configurazione Multi-Modello
@@ -48,15 +49,16 @@ NUM_CLASSES = NUM_FRETS + 1   # 21 classi per corda (0-19 + "non suonata")
 
 ONSET_THRESHOLD = 0.5         # Soglia di confidenza per la detection delle note
 WEIGHTS_FILENAME = "GuitarSet.pt"  # Nome del file dei pesi TabCNN
-WEIGHTS_PATH = WEIGHTS_DIR / WEIGHTS_FILENAME
+WEIGHTS_PATH = WEIGHTS_DIR_SYNTHTAB / WEIGHTS_FILENAME
 
 # Dimensioni di input attese dal modello TabCNN
 CONTEXT_FRAMES = 9            # Frame di contesto temporale (finestra locale)
 
 # =============================================================================
-# Modulo 2b — Parametri del Modello CRNN
+# Modulo 2b — Parametri del
+#  Modello CRNN
 # =============================================================================
-CRNN_WEIGHTS_FILENAME = "MaestroModel.pth"  # Nome del file dei pesi CRNN
+CRNN_WEIGHTS_FILENAME = "maestro_model_finetune.pth"  # Nome del file dei pesi CRNN
 CRNN_WEIGHTS_PATH = WEIGHTS_DIR / CRNN_WEIGHTS_FILENAME
 CRNN_BEGIN_NOTE = 21          # MIDI pitch della nota più bassa (A0)
 CRNN_CLASSES_NUM = 88         # Numero di classi (tasti pianoforte)

@@ -1,0 +1,51 @@
+Device per l'inferenza: cpu
+
+Caricamento modelli in corso...
+Trovati 8 file .mid di riferimento in SetTestHomeMade.
+
+File                                     | Type       | Model  |  P (%) |  R (%) | F1 (%) | Offset (s) |
+------------------------------------------------------------------------------------------------------------
+00_CMaj_120                              | Synthetic  | CRNN   |  100.0 |  100.0 |  100.0 |      0.005 |
+00_CMaj_120                              | Synthetic  | TabCNN |   44.4 |  100.0 |   61.5 |      0.000 |
+00_CMaj_120_Velocity127                  | Synthetic  | CRNN   |   92.3 |  100.0 |   96.0 |      0.005 |
+00_CMaj_120_Velocity127                  | Synthetic  | TabCNN |   17.4 |   33.3 |   22.9 |      0.067 |
+01_CMaj_120                              | Synthetic  | CRNN   |   86.7 |   92.9 |   89.7 |     -0.003 |
+01_CMaj_120                              | Synthetic  | TabCNN |   60.0 |   85.7 |   70.6 |      0.000 |
+02_CMaj_120                              | Synthetic  | CRNN   |   89.5 |   94.4 |   91.9 |     -0.003 |
+02_CMaj_120                              | Synthetic  | TabCNN |   61.9 |   72.2 |   66.7 |      0.000 |
+03_Acustic_CMaj_Scale                    | Synthetic  | CRNN   |   64.3 |  100.0 |   78.3 |      0.006 |
+03_Acustic_CMaj_Scale                    | Synthetic  | TabCNN |   18.2 |   22.2 |   20.0 |      0.131 |
+03_01_CMaj_Scale_BritClean               | Real       | CRNN   |   12.5 |   11.1 |   11.8 |     -0.008 |
+03_01_CMaj_Scale_BritClean               | Real       | TabCNN |   21.4 |   33.3 |   26.1 |     -0.011 |
+04_CMaj_Acustic_melodia                  | Synthetic  | CRNN   |   72.7 |  100.0 |   84.2 |      0.007 |
+04_CMaj_Acustic_melodia                  | Synthetic  | TabCNN |   20.0 |   25.0 |   22.2 |      0.131 |
+04_01_CMaj_Acustic_melodia               | Real       | CRNN   |   22.2 |   25.0 |   23.5 |     -1.599 |
+04_01_CMaj_Acustic_melodia               | Real       | TabCNN |   15.4 |   25.0 |   19.0 |      0.097 |
+04_02_CMaj_Acustic_melodia               | Real       | CRNN   |   10.0 |   12.5 |   11.1 |      0.030 |
+04_02_CMaj_Acustic_melodia               | Real       | TabCNN |    8.3 |   12.5 |   10.0 |      0.046 |
+05_AccordiMedCMaj                        | Synthetic  | CRNN   |   75.0 |   80.0 |   77.4 |      0.006 |
+05_AccordiMedCMaj                        | Synthetic  | TabCNN |   24.3 |   60.0 |   34.6 |      0.065 |
+05_01_AccordiMedCMaj                     | Real       | CRNN   |   69.2 |   60.0 |   64.3 |      0.006 |
+05_01_AccordiMedCMaj                     | Real       | TabCNN |   40.7 |   73.3 |   52.4 |      0.000 |
+05_02_AccordiMedCMaj_Electric            | Real       | CRNN   |   38.5 |   33.3 |   35.7 |      0.058 |
+05_02_AccordiMedCMaj_Electric            | Real       | TabCNN |   43.5 |   66.7 |   52.6 |      0.065 |
+05_03_AccordiMedCMaj_ElectricDist        | Real       | CRNN   |   31.8 |   46.7 |   37.8 |      0.014 |
+05_03_AccordiMedCMaj_ElectricDist        | Real       | TabCNN |    9.8 |   33.3 |   15.2 |      0.070 |
+06_CMaj_MedVeloce                        | Synthetic  | CRNN   |  100.0 |  100.0 |  100.0 |     -0.006 |
+06_CMaj_MedVeloce                        | Synthetic  | TabCNN |   31.2 |   50.0 |   38.5 |      0.057 |
+06_01_CMaj_MedVeloce_Acustic             | Real       | CRNN   |   95.2 |  100.0 |   97.6 |     -0.007 |
+06_01_CMaj_MedVeloce_Acustic             | Real       | TabCNN |   86.4 |   95.0 |   90.5 |      0.011 |
+06_02_CMaj_MedVeloce_Electric            | Real       | CRNN   |   15.0 |   15.0 |   15.0 |      0.099 |
+06_02_CMaj_MedVeloce_Electric            | Real       | TabCNN |   27.3 |   30.0 |   28.6 |      0.104 |
+06_03_CMaj_MedVeloce_Crunch              | Real       | CRNN   |   21.1 |   20.0 |   20.5 |      0.105 |
+06_03_CMaj_MedVeloce_Crunch              | Real       | TabCNN |   33.3 |   45.0 |   38.3 |      0.063 |
+------------------------------------------------------------------------------------------------------------
+
+MEDIA DELLE METRICHE PER CATEGORIA E MODELLO:
+Type            | Model      | N. File |  P (%) |  R (%) | F1 (%) |
+----------------------------------------------------------------------
+Synthetic       | CRNN       | 8       |   85.1 |   95.9 |   89.7 |
+Synthetic       | TabCNN     | 8       |   34.7 |   56.1 |   42.1 |
+Real            | CRNN       | 9       |   35.1 |   36.0 |   35.3 |
+Real            | TabCNN     | 9       |   31.8 |   46.0 |   37.0 |
+----------------------------------------------------------------------
