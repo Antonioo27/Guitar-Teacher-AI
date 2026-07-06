@@ -175,7 +175,7 @@ def prf_real(model, wav_path, midi_path, device, onset_thresh=0.05):
 
 
 @torch.no_grad()
-def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, normalize=True):
+def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, frame_thresh=0.05, normalize=True):
     """Trascrive una registrazione reale -> .mid. normalize=True perché le
     registrazioni casalinghe hanno livelli molto variabili (il modello fu
     addestrato su audio livellato + augmentation di gain ±6dB)."""
@@ -199,7 +199,7 @@ def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, normal
                          out["velocity_output"][0].cpu().numpy()))
         start += 10.0
 
-    notes = decode_activations(segments, onset_thresh=onset_thresh)
+    notes = decode_activations(segments, onset_thresh=onset_thresh, frame_thresh=frame_thresh)
     notes_to_midi(notes, out_midi)
     print(f"Trascritte {len(notes)} note -> {out_midi}")
     return notes

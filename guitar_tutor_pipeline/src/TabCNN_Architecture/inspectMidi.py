@@ -13,8 +13,8 @@ Output salvato (con --output_dir):
     - <nome>_midi.csv   → note dell'annotazione in formato tabellare
 
 Uso:
-    python -m guitar_tutor_pipeline.src.inspectMidi SetTestHomeMade/00_CMaj_120.mid
-    python -m guitar_tutor_pipeline.src.inspectMidi file.mid --output_dir output_notes/
+    python -m guitar_tutor_pipeline.src.TabCNN_Architecture.inspectMidi SetTestHomeMade/00_CMaj_120.mid
+    python -m guitar_tutor_pipeline.src.TabCNN_Architecture.inspectMidi file.mid --output_dir output_notes/
 """
 
 import sys

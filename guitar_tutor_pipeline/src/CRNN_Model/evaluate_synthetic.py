@@ -7,6 +7,7 @@ from guitar_tutor_pipeline.src.CRNN_Model.model import (
     Regress_onset_offset_frame_velocity_CRNN,
     load_finetuned_checkpoint,
 )
+
 from guitar_tutor_pipeline.src.CRNN_Model.inference import prf_real
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -39,6 +39,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("wav", type=Path, help="file .wav da trascrivere")
     ap.add_argument("--thresh", type=float, default=0.05, help="soglia onset (default 0.05, quella tarata)")
+    ap.add_argument("--frame_thresh", type=float, default=0.05, help="soglia frame sustain (default 0.05)")
     ap.add_argument("--program", type=int, default=24, help="24=nylon 25=steel 26=jazz electric")
     args = ap.parse_args()
 
@@ -60,7 +61,7 @@ def main():
 
     # 1. trascrizione -> .mid
     notes = transcribe_real(model, args.wav, midi_path, device,
-                            onset_thresh=args.thresh)
+                            onset_thresh=args.thresh, frame_thresh=args.frame_thresh)
 
     if not notes:
         print("Nessuna nota rilevata. Controlla livello audio / soglia.")
