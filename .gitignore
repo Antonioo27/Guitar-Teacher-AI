@@ -78,3 +78,8 @@ gaps/
 *.zip
 
 /maestro_model
+
+# Dati Audio e Midi
+*.mid
+*.wav
+*.waw

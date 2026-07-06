@@ -9,7 +9,7 @@ class Config:
     GS_DATA_DIR = PIPELINE_ROOT / "data" / "guitarset_data"
     WEIGHTS_DIR = PIPELINE_ROOT / "weights"
     MAESTRO_CHECKPOINT = WEIGHTS_DIR / "MaestroModel.pth"
-    BEST_MODEL_PATH = WEIGHTS_DIR / "best_guitar_model.pth"
+    BEST_MODEL_PATH = WEIGHTS_DIR / "maestro_model_finetune.pth"
     CHECKPOINT_DIR = WEIGHTS_DIR / "checkpoints"
     CHECKPOINT_PATH = CHECKPOINT_DIR / "training_checkpoint.pth"
 
