@@ -5,7 +5,7 @@ import AnalysisResults from './components/AnalysisResults.vue'
 import FeedbackPanel from './components/FeedbackPanel.vue'
 import StatusBar from './components/StatusBar.vue'
 
-const API_BASE = 'http://localhost:8000'
+const API_BASE = 'http://127.0.0.1:8085'
 
 // State
 const audioFile = ref(null)
@@ -34,6 +34,9 @@ async function checkServer() {
   try {
     const res = await fetch(`${API_BASE}/api/health`)
     serverStatus.value = await res.json()
+    if (serverStatus.value.status === 'ok') {
+      await fetchModels()
+    }
   } catch {
     serverStatus.value = { status: 'offline' }
   }

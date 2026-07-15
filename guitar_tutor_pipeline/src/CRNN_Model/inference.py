@@ -156,9 +156,16 @@ def notes_to_midi(notes, out_path, program=24):  # 24=nylon, 25=steel, 26=jazz e
     pm.write(str(out_path))
 
 
-def prf_real(model, wav_path, midi_path, device, onset_thresh=0.05):
-    """Transcribe wav_path and compare against midi_path. Returns (P, R, F1) or None."""
-    est = transcribe_full(model, wav_path, device, onset_thresh=onset_thresh)
+def prf_real(model, wav_path, midi_path, device, onset_thresh=0.05,
+             frame_thresh=0.05, normalize=True, min_dur=0.10):
+    """Transcribe wav_path and compare against midi_path. Returns (P, R, F1) or None.
+
+    Usa lo STESSO percorso di CLI e frontend (transcribe_real: peak-normalize +
+    frame_thresh basso + filtro note corte), così le metriche batch riflettono
+    esattamente la predizione mostrata dall'app."""
+    est = transcribe_real(model, wav_path, None, device,
+                          onset_thresh=onset_thresh, frame_thresh=frame_thresh,
+                          normalize=normalize, min_dur=min_dur)
     ref_pm = pretty_midi.PrettyMIDI(str(midi_path))
     ref = [(n.start, n.end, n.pitch) for inst in ref_pm.instruments
            for n in inst.notes if not inst.is_drum]
@@ -175,10 +182,19 @@ def prf_real(model, wav_path, midi_path, device, onset_thresh=0.05):
 
 
 @torch.no_grad()
-def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, frame_thresh=0.05, normalize=True):
+def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, frame_thresh=0.05,
+                    normalize=True, min_dur=0.10):
     """Trascrive una registrazione reale -> .mid. normalize=True perché le
     registrazioni casalinghe hanno livelli molto variabili (il modello fu
-    addestrato su audio livellato + augmentation di gain ±6dB)."""
+    addestrato su audio livellato + augmentation di gain ±6dB).
+
+    min_dur (s): scarta le note più corte di questa soglia. Con normalize+frame_thresh
+    basso il modello genera falsi positivi corti (armoniche/ottave); filtrarli recupera
+    ~7 punti di precision a recall invariato (misurato sui sintetici). 0.0 = nessun filtro.
+
+    Se out_midi è None non scrive alcun file: restituisce solo la lista di note.
+    Usata così dal backend (model_registry) per condividere lo STESSO percorso
+    di decoding della CLI (peak-normalize + frame_thresh basso)."""
     model.eval()
     audio, _ = librosa.load(str(wav_path), sr=config.SAMPLE_RATE, mono=True)
     if normalize:
@@ -200,6 +216,9 @@ def transcribe_real(model, wav_path, out_midi, device, onset_thresh=0.05, frame_
         start += 10.0
 
     notes = decode_activations(segments, onset_thresh=onset_thresh, frame_thresh=frame_thresh)
-    notes_to_midi(notes, out_midi)
-    print(f"Trascritte {len(notes)} note -> {out_midi}")
+    if min_dur > 0:
+        notes = filter_short_notes(notes, min_dur=min_dur)
+    if out_midi is not None:
+        notes_to_midi(notes, out_midi)
+        print(f"Trascritte {len(notes)} note -> {out_midi}")
     return notes

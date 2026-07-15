@@ -1,7 +1,7 @@
 """
 config.py — Costanti e configurazione centralizzata per la pipeline AI Guitar Tutor.
 
-Tutti i parametri globali (audio, modello, DTW, LLM) sono definiti qui
+Tutti i parametri globali (audio, modello, alignment, LLM) sono definiti qui
 per garantire coerenza tra i moduli.
 """
 
@@ -49,7 +49,7 @@ NUM_CLASSES = NUM_FRETS + 1   # 21 classi per corda (0-19 + "non suonata")
 
 ONSET_THRESHOLD = 0.5         # Soglia di confidenza per la detection delle note
 WEIGHTS_FILENAME = "GuitarSet.pt"  # Nome del file dei pesi TabCNN
-WEIGHTS_PATH = WEIGHTS_DIR_SYNTHTAB / WEIGHTS_FILENAME
+WEIGHTS_PATH = WEIGHTS_DIR / WEIGHTS_FILENAME
 
 # Dimensioni di input attese dal modello TabCNN
 CONTEXT_FRAMES = 9            # Frame di contesto temporale (finestra locale)
@@ -64,11 +64,9 @@ CRNN_BEGIN_NOTE = 21          # MIDI pitch della nota più bassa (A0)
 CRNN_CLASSES_NUM = 88         # Numero di classi (tasti pianoforte)
 
 # =============================================================================
-# Modulo 3 — Parametri DTW / Alignment
+# Modulo 3 — Parametri Alignment
 # =============================================================================
 TIME_TOLERANCE = 0.1          # Tolleranza temporale in secondi per "a tempo"
-PITCH_WEIGHT = 1.0            # Peso della distanza di pitch nel DTW
-TIME_WEIGHT = 0.5             # Peso della distanza temporale nel DTW
 
 # =============================================================================
 # Modulo 4 — Parametri LLM / Feedback

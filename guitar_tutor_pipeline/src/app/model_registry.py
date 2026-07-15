@@ -172,8 +172,14 @@ def transcribe(
         return notes
 
     elif model_name == "CRNN":
-        from ..CRNN_Model.inference import transcribe_full
-        raw_notes = transcribe_full(model, audio_path, device, onset_thresh=0.05)
+        from ..CRNN_Model.inference import transcribe_real
+        # Stesso percorso della CLI (trascribe_real.py): peak-normalize + frame_thresh=0.05.
+        # transcribe_full NON normalizzava e usava frame_thresh=0.3 di default, dando
+        # una predizione diversa dalla CLI a parità di pesi. out_midi=None -> nessun file.
+        raw_notes = transcribe_real(
+            model, audio_path, None, device,
+            onset_thresh=0.05, frame_thresh=0.05, normalize=True,
+        )
         notes = _crnn_notes_to_standard(raw_notes)
         logger.info(f"[CRNN] Trascritte {len(notes)} note da {audio_path}")
         return notes

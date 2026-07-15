@@ -53,7 +53,6 @@ from .inference import (
 
 from ..app.alignment import (
     run_alignment,
-    compute_dtw_alignment,
     classify_errors,
     build_error_log,
 )
@@ -80,7 +79,7 @@ __all__ = [
     # Inference
     "transcribe_audio", "decode_predictions",
     # Alignment
-    "run_alignment", "compute_dtw_alignment", "classify_errors", "build_error_log",
+    "run_alignment", "classify_errors", "build_error_log",
     # Feedback
     "generate_feedback", "build_prompt",
     # Pipeline

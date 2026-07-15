@@ -33,7 +33,7 @@ class GuitarTutorPipeline:
     1. Caricamento del modello di trascrizione (TabCNN o CRNN)
     2. Trascrizione dell'audio dello studente (Moduli 1+2)
     3. Caricamento dello spartito di riferimento
-    4. Allineamento DTW e classificazione errori (Modulo 3)
+    4. Allineamento e classificazione errori (Modulo 3)
     5. Generazione feedback con LLM (Modulo 4)
 
     Usage:
@@ -117,14 +117,14 @@ class GuitarTutorPipeline:
             audio_path: Percorso al file audio dello studente (.wav).
             reference_path: Percorso allo spartito di riferimento (.mid/.jams).
             exercise_context: Descrizione dell'esercizio per il feedback LLM.
-            time_tolerance: Tolleranza temporale per il DTW (secondi).
+            time_tolerance: Tolleranza temporale per l'allineamento (secondi).
             generate_llm_feedback: Se True, genera il feedback con LLM.
 
         Returns:
             Dizionario con i risultati di ogni fase:
             - "predicted_notes": note trascritte dal modello
             - "reference_notes": note dallo spartito
-            - "error_log": report errori dal DTW
+            - "error_log": report errori dall'allineamento
             - "feedback": testo del feedback LLM (se richiesto)
             - "model_used": nome del modello utilizzato
         """
@@ -153,9 +153,9 @@ class GuitarTutorPipeline:
         logger.info(f"  → {len(reference_notes)} note nello spartito")
 
         # =====================================================================
-        # Fase 3: Allineamento DTW e classificazione errori
+        # Fase 3: Allineamento e classificazione errori
         # =====================================================================
-        logger.info("[Modulo 3] Allineamento DTW...")
+        logger.info("[Modulo 3] Allineamento...")
         error_log = run_alignment(predicted_notes, reference_notes, time_tolerance)
         result["error_log"] = error_log
         logger.info(

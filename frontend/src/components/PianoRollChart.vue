@@ -3,11 +3,14 @@ import { computed, ref } from 'vue'
 
 const props = defineProps({
   predictedNotes: { type: Array, required: true },
-  referenceNotes: { type: Array, required: true },
-  globalOffset: { type: Number, default: 0 }
+  referenceNotes: { type: Array, required: true }
 })
 
 const containerRef = ref(null)
+
+// Visibilità delle due corsie (toggle dalla legenda)
+const showRef = ref(true)   // Spartito / Ground Truth
+const showPred = ref(true)  // Audio Esecuzione
 
 const minPitch = computed(() => {
   const allPitches = [...props.predictedNotes, ...props.referenceNotes].map(n => n.pitch || 40)
@@ -37,13 +40,9 @@ const pitchRange = computed(() => maxPitch.value - minPitch.value)
 const zoomX = ref(150) // pixels per second
 const zoomY = ref(20)  // pixels per semitone
 
-// Offset Toggle
-const applyOffset = ref(true)
-
 // Posizionamento CSS
-const getNoteStyle = (note, isPredicted) => {
-  // Se applyOffset è true, trasliamo la predetta dell'offset calcolato. Altrimenti usiamo il tempo grezzo della rete.
-  const time = (isPredicted && applyOffset.value) ? Math.max(0, note.time - props.globalOffset) : note.time
+const getNoteStyle = (note) => {
+  const time = note.time
   const duration = note.duration || 0.2
   const pitch = note.pitch
 
@@ -84,12 +83,21 @@ const timeLines = computed(() => {
     <div class="controls">
       <label>Zoom X: <input type="range" min="50" max="400" v-model="zoomX" /></label>
       <label>Zoom Y: <input type="range" min="10" max="40" v-model="zoomY" /></label>
-      <label class="toggle-offset">
-        <input type="checkbox" v-model="applyOffset" /> Applica Offset (Simula DTW)
-      </label>
       <div class="legend">
-        <span class="legend-item ref">Spartito / Ground Truth (.jams)</span>
-        <span class="legend-item pred">Audio Esecuzione (.wav)</span>
+        <button
+          type="button"
+          class="legend-item ref"
+          :class="{ inactive: !showRef }"
+          @click="showRef = !showRef"
+          :title="showRef ? 'Nascondi Spartito' : 'Mostra Spartito'"
+        >Spartito / Ground Truth</button>
+        <button
+          type="button"
+          class="legend-item pred"
+          :class="{ inactive: !showPred }"
+          @click="showPred = !showPred"
+          :title="showPred ? 'Nascondi Esecuzione' : 'Mostra Esecuzione'"
+        >Audio Esecuzione</button>
       </div>
     </div>
     
@@ -119,20 +127,22 @@ const timeLines = computed(() => {
         </div>
 
         <!-- Note Ground Truth -->
-        <div 
-          v-for="(note, idx) in referenceNotes" 
+        <div
+          v-for="(note, idx) in referenceNotes"
+          v-show="showRef"
           :key="'ref'+idx"
           class="note ref-note"
-          :style="getNoteStyle(note, false)"
+          :style="getNoteStyle(note)"
           :title="`Spartito: ${note.note_name} (${note.pitch}) @ ${note.time.toFixed(2)}s`"
         ></div>
 
         <!-- Note Predette -->
-        <div 
-          v-for="(note, idx) in predictedNotes" 
+        <div
+          v-for="(note, idx) in predictedNotes"
+          v-show="showPred"
           :key="'pred'+idx"
           class="note pred-note"
-          :style="getNoteStyle(note, true)"
+          :style="getNoteStyle(note)"
           :title="`Esecuzione: ${note.note_name} (${note.pitch}) @ ${note.time.toFixed(2)}s`"
         ></div>
       </div>
@@ -186,6 +196,23 @@ const timeLines = computed(() => {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.legend-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Corsia disattivata: testo attenuato e riquadro colore "vuoto" */
+.legend-item.inactive {
+  opacity: 0.4;
+  text-decoration: line-through;
 }
 
 .legend-item::before {
@@ -194,6 +221,10 @@ const timeLines = computed(() => {
   width: 14px;
   height: 14px;
   border-radius: 3px;
+}
+
+.legend-item.inactive::before {
+  background: transparent !important;
 }
 
 .legend-item.ref::before {

@@ -14,7 +14,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 REC_DIR  = config.PIPELINE_ROOT / "data" / "syntetic_recordings"
 REF_DIR  = REC_DIR / "midi"          # <-- ADATTA: dove tieni i .mid di RIFERIMENTO esportati da Logic
-ONSET_TH = 0.05
+# Parametri di decoding UNIFORMI a CLI (trascribe_real) e frontend (model_registry):
+# peak-normalize + soglie basse. Cambiali qui per valutare in coerenza con l'app.
+ONSET_TH   = 0.05
+FRAME_TH   = 0.05
+NORMALIZE  = True
+MIN_DUR    = 0.10   # scarta falsi positivi corti (armoniche/ottave); 0.0 = nessun filtro
 
 
 def find_ref(wav):
@@ -24,7 +29,7 @@ def find_ref(wav):
 
 
 if __name__ == "__main__":
-    print(f"Device: {device}  |  soglia: {ONSET_TH}")
+    print(f"Device: {device}  |  onset_th={ONSET_TH} frame_th={FRAME_TH} normalize={NORMALIZE} min_dur={MIN_DUR}")
     model = Regress_onset_offset_frame_velocity_CRNN(
         config.FRAMES_PER_SECOND, config.CLASSES_NUM).to(device)
     model = load_finetuned_checkpoint(model, config.BEST_MODEL_PATH, device=device)
@@ -43,7 +48,8 @@ if __name__ == "__main__":
         assert "output" not in ref.parts, \
             f"ERRORE: {ref} sembra il MIDI PREDETTO, non il riferimento!"
 
-        res = prf_real(model, wav, ref, device, onset_thresh=ONSET_TH)
+        res = prf_real(model, wav, ref, device, onset_thresh=ONSET_TH,
+                       frame_thresh=FRAME_TH, normalize=NORMALIZE, min_dur=MIN_DUR)
         if res is None:
             print(f"{wav.name:<28}  --- nessuna nota (ref o predetto vuoto)")
             continue

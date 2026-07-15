@@ -185,11 +185,21 @@ async def set_model(selection: ModelSelection):
 async def health_check():
     """Verifica che il server sia attivo."""
     model_loaded = _model is not None
+    # weights_available riflette il modello ATTIVO: è ciò che lo StatusBar del
+    # frontend legge per il badge di stato. Prima mancava qui (era solo in
+    # /api/config) e il badge mostrava sempre "Pesi mancanti".
+    if _current_model_name == "CRNN":
+        weights_available = config.CRNN_WEIGHTS_PATH.exists()
+    else:
+        weights_available = config.WEIGHTS_PATH.exists()
     return {
         "status": "ok",
         "model_loaded": model_loaded,
         "current_model": _current_model_name,
         "available_models": config.AVAILABLE_MODELS,
+        "weights_available": weights_available,
+        "tabcnn_weights_available": config.WEIGHTS_PATH.exists(),
+        "crnn_weights_available": config.CRNN_WEIGHTS_PATH.exists(),
     }
 
 
@@ -266,7 +276,7 @@ async def analyze(
     ),
 ):
     """
-    Pipeline completa: trascrizione + allineamento DTW + feedback LLM.
+    Pipeline completa: trascrizione + allineamento + feedback LLM.
     Usa il modello attualmente selezionato.
 
     Richiede:
@@ -301,7 +311,7 @@ async def analyze(
 
         reference_notes = build_note_sequence(ref_annotations)
 
-        # Fase 3: Allineamento DTW
+        # Fase 3: Allineamento
         error_log = run_alignment(predicted_notes, reference_notes, time_tolerance)
 
         # Fase 4: Feedback LLM

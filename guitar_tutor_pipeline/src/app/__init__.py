@@ -32,7 +32,6 @@ from .dataset import (
 
 from .alignment import (
     run_alignment,
-    compute_dtw_alignment,
     classify_errors,
     build_error_log,
 )
@@ -54,7 +53,7 @@ __all__ = [
     "parse_jams", "parse_midi", "build_note_sequence",
     "midi_to_note_name", "note_name_to_midi", "GuitarSetDataset",
     # Alignment
-    "run_alignment", "compute_dtw_alignment", "classify_errors", "build_error_log",
+    "run_alignment", "classify_errors", "build_error_log",
     # Feedback
     "generate_feedback", "build_prompt",
     # Pipeline
