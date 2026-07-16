@@ -5,7 +5,7 @@ import AnalysisResults from './components/AnalysisResults.vue'
 import FeedbackPanel from './components/FeedbackPanel.vue'
 import StatusBar from './components/StatusBar.vue'
 
-const API_BASE = 'http://127.0.0.1:8085'
+const API_BASE = 'http://127.0.0.1:8000'
 
 // State
 const audioFile = ref(null)

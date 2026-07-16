@@ -41,6 +41,7 @@ Guitar-Teacher-AI/
 │           ├── model.py                 # Definizione modello (High-Resolution)
 │           ├── inference.py             # Predizione note
 │           └── ...                      # Script standalone
+```
 
 ## Come avviare
 

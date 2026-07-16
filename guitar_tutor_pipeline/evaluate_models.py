@@ -19,6 +19,16 @@ from guitar_tutor_pipeline.src.app.model_registry import load_model, transcribe
 from guitar_tutor_pipeline.src.app.dataset import parse_midi, build_note_sequence
 from guitar_tutor_pipeline.src.app.alignment import run_alignment
 
+def get_device():
+    if torch.cuda.is_available():
+        return 'cuda'
+    try:
+        if torch.backends.mps.is_available():
+            return 'mps'
+    except AttributeError:
+        pass
+    return 'cpu'
+
 def main():
     # File di output
     output_file = Path("evaluation_results.txt")
@@ -33,7 +43,7 @@ def main():
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()
     print_and_save(f"Device per l'inferenza: {device}\n")
     
     print_and_save("Caricamento modelli in corso...")

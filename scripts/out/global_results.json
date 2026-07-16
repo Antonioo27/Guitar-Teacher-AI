@@ -1,0 +1,308 @@
+[
+    {
+        "file": "00_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 92.3,
+        "recall": 100.0,
+        "f1": 96.0,
+        "offset": 0.0
+    },
+    {
+        "file": "00_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 44.4,
+        "recall": 100.0,
+        "f1": 61.5,
+        "offset": 0.0
+    },
+    {
+        "file": "00_CMaj_120_Velocity127.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 85.7,
+        "recall": 100.0,
+        "f1": 92.3,
+        "offset": 0.0
+    },
+    {
+        "file": "00_CMaj_120_Velocity127.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 52.2,
+        "recall": 100.0,
+        "f1": 68.6,
+        "offset": 0.0
+    },
+    {
+        "file": "01_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 93.3,
+        "recall": 100.0,
+        "f1": 96.6,
+        "offset": 0.0
+    },
+    {
+        "file": "01_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 60.0,
+        "recall": 85.7,
+        "f1": 70.6,
+        "offset": 0.0
+    },
+    {
+        "file": "02_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 94.7,
+        "recall": 100.0,
+        "f1": 97.3,
+        "offset": 0.0
+    },
+    {
+        "file": "02_CMaj_120.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 61.9,
+        "recall": 72.2,
+        "f1": 66.7,
+        "offset": 0.0
+    },
+    {
+        "file": "03_Acustic_CMaj_Scale.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 81.8,
+        "recall": 100.0,
+        "f1": 90.0,
+        "offset": 0.0
+    },
+    {
+        "file": "03_Acustic_CMaj_Scale.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 72.7,
+        "recall": 88.9,
+        "f1": 80.0,
+        "offset": 0.0
+    },
+    {
+        "file": "03_01_CMaj_Scale_BritClean.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 12.5,
+        "recall": 11.1,
+        "f1": 11.8,
+        "offset": 0.0
+    },
+    {
+        "file": "03_01_CMaj_Scale_BritClean.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 14.3,
+        "recall": 22.2,
+        "f1": 17.4,
+        "offset": 0.0
+    },
+    {
+        "file": "04_CMaj_Acustic_melodia.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0,
+        "offset": 0.0
+    },
+    {
+        "file": "04_CMaj_Acustic_melodia.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 70.0,
+        "recall": 87.5,
+        "f1": 77.8,
+        "offset": 0.0
+    },
+    {
+        "file": "04_01_CMaj_Acustic_melodia.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 11.1,
+        "recall": 12.5,
+        "f1": 11.8,
+        "offset": 0.0
+    },
+    {
+        "file": "04_01_CMaj_Acustic_melodia.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 7.7,
+        "recall": 12.5,
+        "f1": 9.5,
+        "offset": 0.0
+    },
+    {
+        "file": "04_02_CMaj_Acustic_melodia.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 10.0,
+        "recall": 12.5,
+        "f1": 11.1,
+        "offset": 0.0
+    },
+    {
+        "file": "04_02_CMaj_Acustic_melodia.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 8.3,
+        "recall": 12.5,
+        "f1": 10.0,
+        "offset": 0.0
+    },
+    {
+        "file": "05_AccordiMedCMaj.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 72.2,
+        "recall": 86.7,
+        "f1": 78.8,
+        "offset": 0.0
+    },
+    {
+        "file": "05_AccordiMedCMaj.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 35.1,
+        "recall": 86.7,
+        "f1": 50.0,
+        "offset": 0.0
+    },
+    {
+        "file": "05_01_AccordiMedCMaj.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 57.9,
+        "recall": 73.3,
+        "f1": 64.7,
+        "offset": 0.0
+    },
+    {
+        "file": "05_01_AccordiMedCMaj.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 40.7,
+        "recall": 73.3,
+        "f1": 52.4,
+        "offset": 0.0
+    },
+    {
+        "file": "05_02_AccordiMedCMaj_Electric.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 31.2,
+        "recall": 33.3,
+        "f1": 32.3,
+        "offset": 0.0
+    },
+    {
+        "file": "05_02_AccordiMedCMaj_Electric.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 26.1,
+        "recall": 40.0,
+        "f1": 31.6,
+        "offset": 0.0
+    },
+    {
+        "file": "05_03_AccordiMedCMaj_ElectricDist.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 44.4,
+        "recall": 53.3,
+        "f1": 48.5,
+        "offset": 0.0
+    },
+    {
+        "file": "05_03_AccordiMedCMaj_ElectricDist.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 9.8,
+        "recall": 33.3,
+        "f1": 15.2,
+        "offset": 0.0
+    },
+    {
+        "file": "06_CMaj_MedVeloce.wav",
+        "dataset_type": "synthetic",
+        "model": "CRNN",
+        "precision": 100.0,
+        "recall": 100.0,
+        "f1": 100.0,
+        "offset": 0.0
+    },
+    {
+        "file": "06_CMaj_MedVeloce.wav",
+        "dataset_type": "synthetic",
+        "model": "TabCNN",
+        "precision": 53.1,
+        "recall": 85.0,
+        "f1": 65.4,
+        "offset": 0.0
+    },
+    {
+        "file": "06_01_CMaj_MedVeloce_Acustic.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 90.9,
+        "recall": 100.0,
+        "f1": 95.2,
+        "offset": 0.0
+    },
+    {
+        "file": "06_01_CMaj_MedVeloce_Acustic.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 86.4,
+        "recall": 95.0,
+        "f1": 90.5,
+        "offset": 0.0
+    },
+    {
+        "file": "06_02_CMaj_MedVeloce_Electric.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 85.0,
+        "recall": 85.0,
+        "f1": 85.0,
+        "offset": 0.0
+    },
+    {
+        "file": "06_02_CMaj_MedVeloce_Electric.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 68.2,
+        "recall": 75.0,
+        "f1": 71.4,
+        "offset": 0.0
+    },
+    {
+        "file": "06_03_CMaj_MedVeloce_Crunch.wav",
+        "dataset_type": "real",
+        "model": "CRNN",
+        "precision": 61.1,
+        "recall": 55.0,
+        "f1": 57.9,
+        "offset": 0.0
+    },
+    {
+        "file": "06_03_CMaj_MedVeloce_Crunch.wav",
+        "dataset_type": "real",
+        "model": "TabCNN",
+        "precision": 44.4,
+        "recall": 60.0,
+        "f1": 51.1,
+        "offset": 0.0
+    }
+]
